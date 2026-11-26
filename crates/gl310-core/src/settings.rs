@@ -213,6 +213,8 @@ pub struct Settings {
     pub enable_http: bool,
     pub http_port: u16,
     pub expose_lan: bool,
+    /// Studio live video preview (disabling pauses PreviewBridge H.264->MJPEG transcoding to save CPU).
+    pub enable_preview: bool,
 
     /// Hardware interaction & recording path.
     pub led_mode: LedMode,
@@ -251,6 +253,7 @@ impl Default for Settings {
             enable_http: true,
             http_port: 4848,
             expose_lan: false,
+            enable_preview: true,
             led_mode: LedMode::Auto,
             button_action: ButtonAction::ToggleRecord,
             recordings_dir: default_rec_dir,

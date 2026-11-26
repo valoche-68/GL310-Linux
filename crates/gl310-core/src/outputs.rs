@@ -12,7 +12,7 @@ use std::net::{Shutdown, TcpListener, TcpStream};
 use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::process::{Child, ChildStderr, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -1095,10 +1095,32 @@ impl Drop for HttpClientRegistration {
     }
 }
 
+struct ExternalMjpegGuard {
+    counter: Arc<AtomicUsize>,
+}
+
+impl ExternalMjpegGuard {
+    fn new(counter: Arc<AtomicUsize>) -> Self {
+        counter.fetch_add(1, Ordering::AcqRel);
+        Self { counter }
+    }
+}
+
+impl Drop for ExternalMjpegGuard {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn is_studio_mjpeg_query(query: &str) -> bool {
+    query.split('&').any(|pair| pair == "studio=1")
+}
+
 pub struct HttpServer {
     stop: Arc<AtomicBool>,
     addr: String,
     clients: ActiveHttpClients,
+    external_mjpeg_clients: Arc<AtomicUsize>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -1120,6 +1142,8 @@ impl HttpServer {
         let stop_bg = Arc::clone(&stop);
         let clients: ActiveHttpClients = Arc::new(Mutex::new(Vec::new()));
         let clients_bg = Arc::clone(&clients);
+        let external_mjpeg_clients = Arc::new(AtomicUsize::new(0));
+        let ext_mjpeg_bg = Arc::clone(&external_mjpeg_clients);
 
         let thread = thread::spawn(move || {
             let mut next_id: u64 = 1;
@@ -1144,7 +1168,8 @@ impl HttpServer {
                         }
                         let hub_c = hub.clone();
                         let stop_c = Arc::clone(&stop_bg);
-                        thread::spawn(move || handle_http_client(stream, hub_c, stop_c, reg));
+                        let ext_c = Arc::clone(&ext_mjpeg_bg);
+                        thread::spawn(move || handle_http_client(stream, hub_c, stop_c, reg, ext_c));
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(20));
@@ -1158,12 +1183,18 @@ impl HttpServer {
             stop,
             addr: actual_addr,
             clients,
+            external_mjpeg_clients,
             thread: Some(thread),
         })
     }
 
     pub fn address(&self) -> &str {
         &self.addr
+    }
+
+    /// Number of currently connected non-Studio HTTP `/mjpeg` viewers (e.g. browser or LAN KVM tab).
+    pub fn external_mjpeg_clients(&self) -> usize {
+        self.external_mjpeg_clients.load(Ordering::Acquire)
     }
 }
 
@@ -1188,6 +1219,7 @@ fn handle_http_client(
     hub: StreamHub,
     stop: Arc<AtomicBool>,
     _reg: Option<HttpClientRegistration>,
+    external_mjpeg_clients: Arc<AtomicUsize>,
 ) {
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
@@ -1212,13 +1244,8 @@ fn handle_http_client(
             Ok(_) => {}
         }
     }
-    let path = request_line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .split('?')
-        .next()
-        .unwrap_or("/");
+    let target = request_line.split_whitespace().nth(1).unwrap_or("/");
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
 
     match path {
         "/health" => {
@@ -1272,6 +1299,11 @@ fn handle_http_client(
             }
         }
         "/mjpeg" | "/stream.mjpeg" => {
+            let _ext_guard = if !is_studio_mjpeg_query(query) {
+                Some(ExternalMjpegGuard::new(external_mjpeg_clients))
+            } else {
+                None
+            };
             let hdr = "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store, no-cache\r\nPragma: no-cache\r\nConnection: close\r\n\r\n";
             if stream.write_all(hdr.as_bytes()).is_err() {
                 return;
@@ -1350,6 +1382,39 @@ impl ActiveOutputs {
     /// deleted/recreated nor leaked if OBS still holds it open (`EBUSY`).
     pub fn take_owned_v4l2_device(mut self) -> Option<String> {
         self.v4l2.take().and_then(V4l2Output::stop_keep_device)
+    }
+
+    pub fn external_mjpeg_clients(&self) -> usize {
+        self.http
+            .as_ref()
+            .map(HttpServer::external_mjpeg_clients)
+            .unwrap_or(0)
+    }
+
+    /// Dynamically start or stop `PreviewBridge` in H.264+AAC mode without touching V4L2,
+    /// PipeWire, SRT, HTTP, or active `.mp4` recordings. Returns `true` if bridge state changed.
+    pub fn set_preview_running(
+        &mut self,
+        running: bool,
+        mode: CaptureMode,
+        hub: &StreamHub,
+        log: Option<LogSink>,
+    ) -> bool {
+        if mode != CaptureMode::H264Aac {
+            return self.preview.take().is_some();
+        }
+        match (running, self.preview.is_some()) {
+            (true, false) => {
+                self.preview = Some(PreviewBridge::start_logged(hub, log));
+                true
+            }
+            (false, true) => {
+                self.preview = None;
+                hub.clear_preview_frames();
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn start_all_with_owned(
@@ -1707,6 +1772,51 @@ mod tests {
             "Pre-restart HTTP client took too long to receive EOF after drop: {:?}",
             elapsed
         );
+    }
+
+    #[test]
+    fn http_server_tracks_external_mjpeg_clients_separately_from_studio() {
+        let hub = StreamHub::new();
+        let mut fake_jpeg = vec![0xFF, 0xD8];
+        fake_jpeg.extend_from_slice(&[0x55; 160]);
+        fake_jpeg.extend_from_slice(&[0xFF, 0xD9]);
+        hub.publish_jpeg(fake_jpeg.clone());
+
+        let srv = HttpServer::start(hub.clone(), "127.0.0.1", 0).unwrap();
+        let addr = srv.address().to_string();
+        assert_eq!(srv.external_mjpeg_clients(), 0);
+
+        // Studio UI connects with ?studio=1 — must NOT count as an external viewer.
+        let mut studio = TcpStream::connect(&addr).unwrap();
+        studio.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        studio
+            .write_all(b"GET /mjpeg?studio=1&g=1&t=123 HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
+        let mut buf = [0u8; 256];
+        let _ = studio.read(&mut buf).unwrap();
+        assert_eq!(srv.external_mjpeg_clients(), 0);
+
+        // External browser / KVM client connects without studio=1 — MUST increment counter.
+        let mut ext = TcpStream::connect(&addr).unwrap();
+        ext.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        ext.write_all(b"GET /mjpeg HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
+        let _ = ext.read(&mut buf).unwrap();
+        assert_eq!(srv.external_mjpeg_clients(), 1);
+
+        // Disconnecting external client must decrement counter back to 0 once a write observes EOF.
+        drop(ext);
+        for _ in 0..8 {
+            hub.publish_jpeg(fake_jpeg.clone());
+            thread::sleep(Duration::from_millis(25));
+            if srv.external_mjpeg_clients() == 0 {
+                break;
+            }
+        }
+        assert_eq!(srv.external_mjpeg_clients(), 0);
+
+        drop(studio);
+        drop(srv);
     }
 
     #[test]

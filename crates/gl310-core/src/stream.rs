@@ -589,6 +589,14 @@ impl StreamHub {
         g.last_jpeg = None;
     }
 
+    /// Clear cached preview JPEG and frame counter when pausing `PreviewBridge` in H.264 mode
+    /// without disturbing MPEG-TS stats, PAT/PMT bootstrap headers, or active V4L2/SRT/REC streams.
+    pub fn clear_preview_frames(&self) {
+        let mut g = self.inner.lock().unwrap();
+        g.last_jpeg = None;
+        g.mjpeg_frames = 0;
+    }
+
     /// Clear cached JPEG snapshot, PAT/PMT bootstrap headers, and TS counters when restarting or
     /// stopping capture so newly subscribed outputs never receive stale pre-restart headers or frames.
     pub fn reset_cache(&self) {

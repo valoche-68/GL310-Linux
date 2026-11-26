@@ -206,6 +206,7 @@ pub struct EngineSnapshot {
     pub srt_url: Option<String>,
     pub v4l2_active: bool,
     pub pipewire_active: bool,
+    pub preview_active: bool,
     pub hdmi_out_passthrough: String,
 }
 
@@ -230,6 +231,7 @@ struct EngineState {
     srt_url: Option<String>,
     v4l2_active: bool,
     pipewire_active: bool,
+    preview_active: bool,
 }
 
 type SnapshotReply = std::sync::mpsc::SyncSender<Result<EngineSnapshot, String>>;
@@ -238,6 +240,8 @@ enum EngineCmd {
     StartCapture(Option<SnapshotReply>),
     StopCapture(Option<SnapshotReply>),
     ApplySettings(Settings),
+    SetPreviewEnabled(bool, Option<SnapshotReply>),
+    SetWindowVisible(bool),
     SetLed(LedMode),
     SetAudioInput(AudioInput),
     SetAnalogVolume(u8),
@@ -315,6 +319,7 @@ impl CaptureEngine {
             srt_url: None,
             v4l2_active: false,
             pipewire_active: false,
+            preview_active: false,
         }));
 
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel();
@@ -479,6 +484,28 @@ impl CaptureEngine {
         let _ = g.settings.save(&self.config_path);
     }
 
+    /// Live-toggle the Studio video preview (dynamically stops/starts `PreviewBridge` in H.264 mode
+    /// without restarting the hardware encoder or disturbing V4L2/PipeWire/SRT/REC).
+    pub fn set_preview_enabled(&self, enabled: bool) -> Result<EngineSnapshot, String> {
+        {
+            let mut g = self.state.lock().unwrap();
+            g.settings.enable_preview = enabled;
+            let _ = g.settings.save(&self.config_path);
+        }
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        self.cmd_tx
+            .send(EngineCmd::SetPreviewEnabled(enabled, Some(tx)))
+            .map_err(|e| format!("Engine channel closed: {e}"))?;
+        rx.recv_timeout(Duration::from_secs(6))
+            .map_err(|_| "Timeout while updating preview state".to_string())?
+    }
+
+    /// Notify the engine when the Studio window is shown or hidden/minimized to the system tray so
+    /// `PreviewBridge` pauses automatically when hidden (unless an external `/mjpeg` viewer is connected).
+    pub fn set_window_visible(&self, visible: bool) {
+        let _ = self.cmd_tx.send(EngineCmd::SetWindowVisible(visible));
+    }
+
     pub fn start_recording(&self, path_override: Option<PathBuf>) -> Result<RecordingStatus, String> {
         let mut g = self.state.lock().unwrap();
         if g.phase != EnginePhase::Streaming {
@@ -524,7 +551,20 @@ impl CaptureEngine {
     }
 
     pub fn take_snapshot(&self) -> Result<String, String> {
-        let rec_dir = self.state.lock().unwrap().settings.recordings_dir.clone();
+        let (rec_dir, mode, enable_preview) = {
+            let g = self.state.lock().unwrap();
+            (
+                g.settings.recordings_dir.clone(),
+                g.settings.mode,
+                g.settings.enable_preview,
+            )
+        };
+        if mode == CaptureMode::H264Aac && !enable_preview && self.hub.latest_jpeg().is_none() {
+            return Err(
+                "Aperçu désactivé — réactivez l’aperçu pour prendre une capture photo en mode H.264"
+                    .to_string(),
+            );
+        }
         let path = save_snapshot(&self.hub, Path::new(&rec_dir))?;
         let s = path.display().to_string();
         push_state_log(&self.state, "info", format!("Snapshot saved -> {s}"));
@@ -588,6 +628,7 @@ fn build_snapshot(state: &Arc<Mutex<EngineState>>, hub: &StreamHub, vu: &VuMeter
         srt_url: g.srt_url.clone(),
         v4l2_active: g.v4l2_active,
         pipewire_active: g.pipewire_active,
+        preview_active: g.preview_active,
         hdmi_out_passthrough: "Hardware HDMI loop-through (always active when HDMI IN is locked)".into(),
     }
 }
@@ -655,6 +696,7 @@ fn engine_worker_loop(
     let mut device: Option<Gl310Device> = None;
     let mut active_outputs: Option<ActiveOutputs> = None;
     let mut streaming = false;
+    let mut window_visible = true;
     let mut ts_deframer = TsDeframer::new();
     let mut mjpeg_deframer = MjpegDeframer::new();
 
@@ -683,6 +725,26 @@ fn engine_worker_loop(
                         apply_active_outputs_to_state(&mut g, &cfg, outputs, host);
                     } else {
                         g.display_host = host;
+                    }
+                }
+                EngineCmd::SetPreviewEnabled(enabled, reply) => {
+                    {
+                        let mut g = state.lock().unwrap();
+                        g.settings.enable_preview = enabled;
+                    }
+                    if streaming {
+                        sync_preview_bridge(&state, &hub, &mut active_outputs, window_visible);
+                    }
+                    if let Some(tx) = reply {
+                        let _ = tx.send(Ok(build_snapshot(&state, &hub, &vu)));
+                    }
+                }
+                EngineCmd::SetWindowVisible(visible) => {
+                    if window_visible != visible {
+                        window_visible = visible;
+                        if streaming {
+                            sync_preview_bridge(&state, &hub, &mut active_outputs, window_visible);
+                        }
                     }
                 }
                 EngineCmd::SetLed(mode) => {
@@ -768,9 +830,16 @@ fn engine_worker_loop(
                                 &mut ts_deframer,
                                 &mut mjpeg_deframer,
                                 preserved_v4l2,
+                                window_visible,
                             );
                         } else if let Some(dev_path) = preserved_v4l2 {
                             remove_v4l2_device(&dev_path);
+                        }
+                    } else if streaming {
+                        sync_preview_bridge(&state, &hub, &mut active_outputs, window_visible);
+                        if let Some(ref outputs) = active_outputs {
+                            let mut g = state.lock().unwrap();
+                            apply_active_outputs_to_state(&mut g, &new_cfg, outputs, next_display_host);
                         }
                     } else if let Some(ref outputs) = active_outputs {
                         let mut g = state.lock().unwrap();
@@ -794,6 +863,7 @@ fn engine_worker_loop(
                             &mut ts_deframer,
                             &mut mjpeg_deframer,
                             None,
+                            window_visible,
                         );
                         if streaming {
                             stream_started_at = Some(Instant::now());
@@ -998,7 +1068,9 @@ fn engine_worker_loop(
                         if started.elapsed() >= Duration::from_secs(4) {
                             let ts_pkts = hub.ts_stats().packets;
                             let mj_frames = hub.mjpeg_frames();
-                            if (mode == CaptureMode::H264Aac && (ts_pkts == 0 || mj_frames == 0))
+                            let preview_expected = state.lock().unwrap().preview_active;
+                            if (mode == CaptureMode::H264Aac
+                                && (ts_pkts == 0 || (preview_expected && mj_frames == 0)))
                                 || (mode == CaptureMode::Mjpeg && mj_frames == 0)
                             {
                                 no_data_warned = true;
@@ -1041,6 +1113,11 @@ fn engine_worker_loop(
         };
         if last_signal_poll.elapsed() >= poll_interval {
             last_signal_poll = Instant::now();
+            if streaming {
+                // Dynamically wake/pause PreviewBridge if an external /mjpeg viewer connects/disconnects
+                // while Studio is minimized to the system tray.
+                sync_preview_bridge(&state, &hub, &mut active_outputs, window_visible);
+            }
             if let Some(ref dev) = device {
                 // Check physical button / MCU events
                 if let Ok(ev) = dev.poll_mcu_event(!streaming) {
@@ -1080,6 +1157,7 @@ fn engine_worker_loop(
                                             &mut ts_deframer,
                                             &mut mjpeg_deframer,
                                             None,
+                                            window_visible,
                                         );
                                     }
                                 }
@@ -1111,15 +1189,32 @@ fn engine_worker_loop(
                                     }
                                 }
                                 ButtonAction::Snapshot => {
-                                    let rec_dir =
-                                        state.lock().unwrap().settings.recordings_dir.clone();
-                                    match save_snapshot(&hub, Path::new(&rec_dir)) {
-                                        Ok(p) => push_state_log(
+                                    let (rec_dir, mode, enable_preview) = {
+                                        let g = state.lock().unwrap();
+                                        (
+                                            g.settings.recordings_dir.clone(),
+                                            g.settings.mode,
+                                            g.settings.enable_preview,
+                                        )
+                                    };
+                                    if mode == CaptureMode::H264Aac
+                                        && !enable_preview
+                                        && hub.latest_jpeg().is_none()
+                                    {
+                                        push_state_log(
                                             &state,
-                                            "info",
-                                            format!("Snapshot saved by button -> {}", p.display()),
-                                        ),
-                                        Err(e) => push_state_log(&state, "warn", e),
+                                            "warn",
+                                            "Aperçu désactivé — réactivez l’aperçu pour prendre une capture photo en mode H.264",
+                                        );
+                                    } else {
+                                        match save_snapshot(&hub, Path::new(&rec_dir)) {
+                                            Ok(p) => push_state_log(
+                                                &state,
+                                                "info",
+                                                format!("Snapshot saved by button -> {}", p.display()),
+                                            ),
+                                            Err(e) => push_state_log(&state, "warn", e),
+                                        }
                                     }
                                 }
                                 ButtonAction::None => {}
@@ -1189,6 +1284,7 @@ fn engine_worker_loop(
                                     &mut ts_deframer,
                                     &mut mjpeg_deframer,
                                     preserved_v4l2,
+                                    window_visible,
                                 );
                             }
                         }
@@ -1266,6 +1362,64 @@ fn clear_streaming_state(g: &mut EngineState) {
     g.srt_url = None;
     g.v4l2_active = false;
     g.pipewire_active = false;
+    g.preview_active = false;
+}
+
+fn desired_preview_active(
+    cfg: &Settings,
+    window_visible: bool,
+    outputs: &ActiveOutputs,
+) -> bool {
+    if !cfg.enable_preview {
+        return false;
+    }
+    match cfg.mode {
+        CaptureMode::Mjpeg => true,
+        CaptureMode::H264Aac => window_visible || outputs.external_mjpeg_clients() > 0,
+    }
+}
+
+fn sync_preview_bridge(
+    state: &Arc<Mutex<EngineState>>,
+    hub: &StreamHub,
+    active_outputs: &mut Option<ActiveOutputs>,
+    window_visible: bool,
+) {
+    let cfg = state.lock().unwrap().settings.clone();
+    let Some(outputs) = active_outputs.as_mut() else {
+        state.lock().unwrap().preview_active = false;
+        return;
+    };
+    let want_active = desired_preview_active(&cfg, window_visible, outputs);
+    let log_state = Arc::clone(state);
+    let log_sink: LogSink = Arc::new(move |lvl, msg| {
+        push_state_log(&log_state, lvl, msg);
+    });
+    let bridge_changed = outputs.set_preview_running(want_active, cfg.mode, hub, Some(log_sink));
+    let actual_active = match cfg.mode {
+        CaptureMode::H264Aac => outputs.preview.is_some(),
+        CaptureMode::Mjpeg => cfg.enable_preview,
+    };
+    let prev_active = {
+        let mut g = state.lock().unwrap();
+        let prev = g.preview_active;
+        g.preview_active = actual_active;
+        prev
+    };
+    if bridge_changed || prev_active != actual_active {
+        let msg = if actual_active {
+            if !window_visible && cfg.mode == CaptureMode::H264Aac {
+                "Aperçu réveillé pour un client HTTP /mjpeg externe"
+            } else {
+                "Aperçu vidéo réactivé"
+            }
+        } else if !cfg.enable_preview {
+            "Aperçu vidéo désactivé (économie CPU — OBS/V4L2/REC inchangés)"
+        } else {
+            "Aperçu mis en veille (fenêtre réduite dans la barre système)"
+        };
+        push_state_log(state, "info", msg);
+    }
 }
 
 fn apply_active_outputs_to_state(
@@ -1299,6 +1453,10 @@ fn apply_active_outputs_to_state(
     g.srt_url = srt_url;
     g.v4l2_active = outputs.v4l2.is_some();
     g.pipewire_active = outputs.pipewire.is_some();
+    g.preview_active = match cfg.mode {
+        CaptureMode::H264Aac => outputs.preview.is_some(),
+        CaptureMode::Mjpeg => cfg.enable_preview,
+    };
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1313,6 +1471,7 @@ fn start_capture_internal(
     ts_deframer: &mut TsDeframer,
     mjpeg_deframer: &mut MjpegDeframer,
     preserved_v4l2: Option<String>,
+    window_visible: bool,
 ) {
     let sig = dev.read_signal().ok().flatten();
     start_capture_with_signal(
@@ -1327,6 +1486,7 @@ fn start_capture_internal(
         ts_deframer,
         mjpeg_deframer,
         preserved_v4l2,
+        window_visible,
     );
 }
 
@@ -1343,6 +1503,7 @@ fn start_capture_with_signal(
     ts_deframer: &mut TsDeframer,
     mjpeg_deframer: &mut MjpegDeframer,
     preserved_v4l2: Option<String>,
+    window_visible: bool,
 ) {
     let cfg = state.lock().unwrap().settings.clone();
 
@@ -1373,12 +1534,13 @@ fn start_capture_with_signal(
             let log_sink: LogSink = Arc::new(move |lvl, msg| {
                 push_state_log(&log_state, lvl, msg);
             });
+            let start_preview = cfg.enable_preview && window_visible;
             let outputs = ActiveOutputs::start_all_with_owned_logged(
                 &cfg,
                 hub,
                 vu.clone(),
                 monitor.clone(),
-                true,
+                start_preview,
                 preserved_v4l2,
                 Some(log_sink),
             );
@@ -1419,7 +1581,7 @@ fn start_capture_with_signal(
                 state,
                 "info",
                 format!(
-                    "Encoder started: {:?} {}x{}@{} fps | {} | v4l2={} pw={} http={} srt={}",
+                    "Encoder started: {:?} {}x{}@{} fps | {} | v4l2={} pw={} http={} srt={} preview={}",
                     cfg.mode,
                     regs.out_width,
                     regs.out_height,
@@ -1429,6 +1591,7 @@ fn start_capture_with_signal(
                     active_outputs.as_ref().is_some_and(|o| o.pipewire.is_some()),
                     active_outputs.as_ref().is_some_and(|o| o.http.is_some()),
                     active_outputs.as_ref().is_some_and(|o| o.srt.is_some()),
+                    active_outputs.as_ref().is_some_and(|o| o.preview.is_some()),
                 ),
             );
         }
@@ -1485,13 +1648,14 @@ mod tests {
     fn live_ui_settings_do_not_require_encoder_restart() {
         let base = Settings::default();
 
-        // Changing button_action, led_mode, pc_monitor, or recordings_dir must NOT abort recordings
+        // Changing button_action, led_mode, pc_monitor, enable_preview, or recordings_dir must NOT abort recordings
         let mut live = base.clone();
         live.button_action = ButtonAction::Snapshot;
         live.led_mode = LedMode::Clockwise;
         live.pc_monitor = true;
         live.pc_monitor_volume = 55;
         live.pc_monitor_muted = true;
+        live.enable_preview = false;
         live.recordings_dir = "/tmp/gl310-recs".to_string();
         assert!(!settings_require_restart(&base, &live));
 
@@ -1627,6 +1791,7 @@ mod tests {
             srt_url: None,
             v4l2_active: false,
             pipewire_active: false,
+            preview_active: false,
         };
 
         let host = display_host_for(cfg.expose_lan);
@@ -1675,8 +1840,158 @@ mod tests {
         assert!(st.srt_url.is_none());
         assert!(!st.v4l2_active);
         assert!(!st.pipewire_active);
+        assert!(!st.preview_active);
 
         drop(outputs);
+    }
+
+    #[test]
+    fn preview_bridge_toggles_dynamically_and_pauses_when_window_hidden() {
+        let hub = StreamHub::new();
+        let vu = VuMeter::new();
+        let cfg = Settings {
+            mode: CaptureMode::H264Aac,
+            enable_v4l2: false,
+            enable_pipewire_audio: false,
+            enable_srt: false,
+            enable_http: true,
+            http_port: 0,
+            enable_preview: true,
+            ..Default::default()
+        };
+        let monitor = MonitorControl::from_settings(&cfg);
+        let mut outputs = ActiveOutputs::start_all(&cfg, &hub, vu, monitor, true);
+        assert!(outputs.preview.is_some());
+        assert!(desired_preview_active(&cfg, true, &outputs));
+        assert!(!desired_preview_active(&cfg, false, &outputs));
+
+        // Minimize to tray with no external /mjpeg clients -> preview pauses cleanly
+        assert!(outputs.set_preview_running(false, cfg.mode, &hub, None));
+        assert!(outputs.preview.is_none());
+
+        // User explicitly disables preview -> remains off even when window is visible
+        let mut cfg_off = cfg.clone();
+        cfg_off.enable_preview = false;
+        assert!(!desired_preview_active(&cfg_off, true, &outputs));
+
+        // Re-enabling starts PreviewBridge dynamically without touching HttpServer
+        let http_addr = outputs.http.as_ref().unwrap().address().to_string();
+        assert!(outputs.set_preview_running(true, cfg.mode, &hub, None));
+        assert!(outputs.preview.is_some());
+        assert_eq!(outputs.http.as_ref().unwrap().address(), http_addr);
+
+        drop(outputs);
+    }
+
+    #[test]
+    #[ignore = "Requires plugged-in AVerMedia GL310 (07ca:c835) with active HDMI signal"]
+    fn live_hardware_preview_toggle_and_tray_pause() {
+        let cfg = Settings {
+            mode: CaptureMode::H264Aac,
+            enable_v4l2: true,
+            enable_pipewire_audio: true,
+            enable_srt: false,
+            enable_http: true,
+            http_port: 14_898,
+            enable_preview: true,
+            ..Default::default()
+        };
+        let engine = CaptureEngine::start(Some(cfg));
+
+        // Wait for device probe / RAM boot to reach Idle
+        let mut ready = false;
+        for _ in 0..80 {
+            if engine.snapshot().phase == EnginePhase::Idle {
+                ready = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(ready, "GL310 did not reach Idle: {:?}", engine.snapshot().status_message);
+
+        // 1. Start capture with preview ON
+        let snap1 = engine.start_capture_sync().expect("start_capture_sync");
+        assert_eq!(snap1.phase, EnginePhase::Streaming);
+        assert!(snap1.preview_active);
+        assert!(snap1.v4l2_active);
+        let gen0 = snap1.stream_generation;
+
+        // Wait for live preview frames + TS packets
+        let mut got_frames = false;
+        for _ in 0..50 {
+            let s = engine.snapshot();
+            if s.mjpeg_frames > 0 && s.ts_stats.packets > 0 {
+                got_frames = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(got_frames, "Expected live preview JPEG frames after capture start");
+
+        // 2. Toggle preview OFF live -> zero encoder restart, V4L2/PW stay active, TS keeps flowing
+        let pkts_before_off = engine.snapshot().ts_stats.packets;
+        let snap_off = engine.set_preview_enabled(false).expect("set_preview_enabled(false)");
+        assert!(!snap_off.preview_active);
+        assert!(!snap_off.settings.enable_preview);
+        assert_eq!(snap_off.stream_generation, gen0, "Toggling preview OFF must NOT restart encoder");
+        assert!(snap_off.v4l2_active);
+        assert!(snap_off.pipewire_active);
+        let snap_err = engine.take_snapshot().unwrap_err();
+        assert!(snap_err.contains("Aperçu désactivé"), "Unexpected snapshot err: {snap_err}");
+
+        thread::sleep(Duration::from_millis(600));
+        let s_during_off = engine.snapshot();
+        assert!(
+            s_during_off.ts_stats.packets > pkts_before_off,
+            "MPEG-TS stream must keep flowing while preview is OFF"
+        );
+        assert_eq!(s_during_off.mjpeg_frames, 0, "PreviewBridge must not publish frames while OFF");
+
+        // 3. Toggle preview back ON live -> zero encoder restart, frames resume
+        let snap_on = engine.set_preview_enabled(true).expect("set_preview_enabled(true)");
+        assert!(snap_on.preview_active);
+        assert!(snap_on.settings.enable_preview);
+        assert_eq!(snap_on.stream_generation, gen0, "Toggling preview ON must NOT restart encoder");
+        let mut resumed = false;
+        for _ in 0..50 {
+            if engine.snapshot().mjpeg_frames > 0 {
+                resumed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(resumed, "Preview frames did not resume after re-enabling preview");
+
+        // 4. Hide to system tray -> PreviewBridge auto-pauses with zero encoder restart
+        engine.set_window_visible(false);
+        let mut tray_paused = false;
+        for _ in 0..20 {
+            if !engine.snapshot().preview_active {
+                tray_paused = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(tray_paused, "PreviewBridge should auto-pause when window is hidden in tray");
+        assert_eq!(engine.snapshot().stream_generation, gen0);
+        assert!(engine.snapshot().v4l2_active);
+
+        // 5. Restore from system tray -> PreviewBridge wakes back up automatically
+        engine.set_window_visible(true);
+        let mut tray_resumed = false;
+        for _ in 0..50 {
+            let s = engine.snapshot();
+            if s.preview_active && s.mjpeg_frames > 0 {
+                tray_resumed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(tray_resumed, "PreviewBridge did not wake up on tray restore");
+        assert_eq!(engine.snapshot().stream_generation, gen0);
+
+        let _ = engine.stop_capture_sync();
+        engine.shutdown();
     }
 
     #[test]

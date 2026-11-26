@@ -15,11 +15,21 @@
   let currentSnap = null;
   let settingsHydrated = false;
   let captureBusy = false;
+  let previewBusy = false;
   let activePreviewKey = "";
   let previewRetryTimer = null;
   let logFilter = "all";
   let toastTimer = null;
   const customSelectUpdaters = [];
+
+  function disconnectPreview() {
+    if (activePreviewKey) {
+      activePreviewKey = "";
+      clearTimeout(previewRetryTimer);
+      const img = $("preview-img");
+      if (img) img.removeAttribute("src");
+    }
+  }
 
   // Zero-churn DOM helpers: skip writes when unchanged so WebKitGTK avoids needless repaints.
   function setText(el, text) {
@@ -325,37 +335,44 @@
     const isStreaming = snap.phase === "streaming";
     const previewImg = $("preview-img");
     const standby = $("monitor-standby");
+    const previewEnabled = snap.settings.enable_preview !== false;
+    const previewActive = snap.preview_active !== false;
     const hasVideoFrame = (snap.mjpeg_frames || 0) > 0;
 
-    if (isStreaming && snap.mjpeg_url && hasVideoFrame) {
+    if (
+      isStreaming &&
+      snap.mjpeg_url &&
+      previewEnabled &&
+      previewActive &&
+      hasVideoFrame &&
+      !document.hidden
+    ) {
       const localUrl = `http://127.0.0.1:${snap.settings.http_port}/mjpeg`;
       const previewKey = `${localUrl}#${snap.stream_generation || 0}`;
       if (activePreviewKey !== previewKey) {
         activePreviewKey = previewKey;
         clearTimeout(previewRetryTimer);
-        previewImg.src = `${localUrl}?g=${snap.stream_generation || 0}&t=${Date.now()}`;
+        previewImg.src = `${localUrl}?studio=1&g=${snap.stream_generation || 0}&t=${Date.now()}`;
       }
       setHidden(previewImg, false);
       setHidden(standby, true);
     } else {
-      if (activePreviewKey) {
-        activePreviewKey = "";
-        clearTimeout(previewRetryTimer);
-        previewImg.removeAttribute("src");
-      }
+      disconnectPreview();
       setHidden(previewImg, true);
       setHidden(standby, false);
       const tsPkts = snap.ts_stats ? snap.ts_stats.packets : 0;
       const standbyTitle = isStreaming
-        ? !snap.mjpeg_url
-          ? "Capture active — aperçu HTTP désactivé"
-          : !sig
-            ? "Capture active — Aucun signal HDMI IN"
-            : sig.hdcp
-              ? "Signal bloqué par protection HDCP"
-              : tsPkts === 0 && !isMjpeg
-                ? "Capture active — En attente du flux USB…"
-                : "Décodage de la première image…"
+        ? !previewEnabled
+          ? "Capture active — Aperçu désactivé (économie CPU)"
+          : !snap.mjpeg_url
+            ? "Capture active — aperçu HTTP désactivé"
+            : !sig
+              ? "Capture active — Aucun signal HDMI IN"
+              : sig.hdcp
+                ? "Signal bloqué par protection HDCP"
+                : tsPkts === 0 && !isMjpeg
+                  ? "Capture active — En attente du flux USB…"
+                  : "Décodage de la première image…"
         : snap.phase === "idle"
           ? sig
             ? `Source prête : ${sig.width}×${sig.height}@${sig.refresh_hz} Hz`
@@ -368,21 +385,28 @@
                 ? "Erreur de capture GL310"
                 : "En attente du boîtier GL310";
       const standbySub = isStreaming
-        ? !snap.mjpeg_url
-          ? `Réactivez le serveur HTTP intégré (:${snap.settings.http_port}) dans l’onglet Sorties OBS pour afficher l’aperçu en direct.`
-          : !sig
-            ? "Vérifiez le câble HDMI IN et la source vidéo. L’aperçu et la caméra OBS (/dev/video14) s’activeront automatiquement dès le verrouillage HDMI."
-            : sig.hdcp
-              ? "Le boîtier GL310 ne peut pas capturer un flux chiffré HDCP. Désactivez HDCP sur la console ou la source."
-              : `Mode ${isMjpeg ? "MJPEG matériel" : "H.264 + AAC"} · ${tsPkts} paquets TS reçus · Consultez « Boîtier & Logs » si aucun flux n’apparaît.`
+        ? !previewEnabled
+          ? "OBS (/dev/video14, GL310 Audio, SRT/HTTP) et l’enregistrement .mp4 continuent normalement en arrière-plan."
+          : !snap.mjpeg_url
+            ? `Réactivez le serveur HTTP intégré (:${snap.settings.http_port}) dans l’onglet Sorties OBS pour afficher l’aperçu en direct.`
+            : !sig
+              ? "Vérifiez le câble HDMI IN et la source vidéo. L’aperçu et la caméra OBS (/dev/video14) s’activeront automatiquement dès le verrouillage HDMI."
+              : sig.hdcp
+                ? "Le boîtier GL310 ne peut pas capturer un flux chiffré HDCP. Désactivez HDCP sur la console ou la source."
+                : `Mode ${isMjpeg ? "MJPEG matériel" : "H.264 + AAC"} · ${tsPkts} paquets TS reçus · Consultez « Boîtier & Logs » si aucun flux n’apparaît.`
         : snap.status_message;
       setText($("standby-title"), standbyTitle);
       setText($("standby-sub"), standbySub);
       const acts = $("standby-actions");
+      const btnRefresh = $("btn-standby-refresh");
       const btnFw = $("btn-standby-fw");
-      const showActs = !isStreaming && snap.phase !== "idle" && snap.phase !== "booting";
-      setHidden(acts, !showActs);
-      setHidden(btnFw, snap.phase !== "firmware_missing");
+      const btnEnablePrev = $("btn-standby-enable-preview");
+      const showRefresh = !isStreaming && snap.phase !== "idle" && snap.phase !== "booting";
+      const showEnablePrev = isStreaming && !previewEnabled;
+      setHidden(btnRefresh, !showRefresh);
+      setHidden(btnFw, !showRefresh || snap.phase !== "firmware_missing");
+      setHidden(btnEnablePrev, !showEnablePrev);
+      setHidden(acts, !showRefresh && !showEnablePrev);
     }
 
     // 5. Stereo VU-Meter (GPU-safe transform: scaleX, quantized to avoid idle churn)
@@ -403,12 +427,30 @@
       setHidden($("icon-capture-stop"), !isStreaming);
     }
 
+    if (!previewBusy) {
+      const prevBtn = $("btn-toggle-preview");
+      if (prevBtn) {
+        prevBtn.disabled = false;
+        setClassFlag(prevBtn, "is-off", !previewEnabled);
+        prevBtn.setAttribute("aria-pressed", String(previewEnabled));
+        setText($("btn-preview-label"), previewEnabled ? "Aperçu" : "Aperçu coupé");
+        setHidden($("icon-preview-on"), !previewEnabled);
+        setHidden($("icon-preview-off"), previewEnabled);
+      }
+    }
+
     const recActive = Boolean(snap.recording && snap.recording.active);
     const recBtn = $("btn-toggle-record");
     recBtn.disabled = !isStreaming || isMjpeg;
     setClassFlag(recBtn, "recording", recActive);
     setText($("btn-record-label"), recActive ? "Arrêter REC" : "Enregistrer .mp4");
-    $("btn-snapshot").disabled = !isStreaming;
+    const snapBtn = $("btn-snapshot");
+    const snapDisabled = !isStreaming || (!isMjpeg && !previewEnabled);
+    snapBtn.disabled = snapDisabled;
+    snapBtn.title =
+      !isMjpeg && !previewEnabled
+        ? "Réactivez l’aperçu pour prendre une capture photo en mode H.264"
+        : "Prendre une capture photo JPEG";
 
     const tally = $("hud-rec-tally");
     setHidden(tally, !recActive);
@@ -533,12 +575,30 @@
 
   // Auto-reconnect MJPEG preview image if the local HTTP server restarts during reconfiguration
   $("preview-img").addEventListener("error", () => {
-    if (!currentSnap || currentSnap.phase !== "streaming" || !currentSnap.mjpeg_url) return;
+    if (
+      !currentSnap ||
+      currentSnap.phase !== "streaming" ||
+      !currentSnap.mjpeg_url ||
+      currentSnap.settings.enable_preview === false ||
+      currentSnap.preview_active === false ||
+      document.hidden
+    ) {
+      return;
+    }
     clearTimeout(previewRetryTimer);
     previewRetryTimer = setTimeout(() => {
-      if (!currentSnap || currentSnap.phase !== "streaming" || !currentSnap.mjpeg_url) return;
+      if (
+        !currentSnap ||
+        currentSnap.phase !== "streaming" ||
+        !currentSnap.mjpeg_url ||
+        currentSnap.settings.enable_preview === false ||
+        currentSnap.preview_active === false ||
+        document.hidden
+      ) {
+        return;
+      }
       const localUrl = `http://127.0.0.1:${currentSnap.settings.http_port}/mjpeg`;
-      $("preview-img").src = `${localUrl}?g=${currentSnap.stream_generation || 0}&retry=${Date.now()}`;
+      $("preview-img").src = `${localUrl}?studio=1&g=${currentSnap.stream_generation || 0}&retry=${Date.now()}`;
     }, 600);
   });
 
@@ -579,6 +639,38 @@
       showToast(`Erreur capture : ${err}`);
     }
   });
+
+  async function setPreviewEnabled(nextEnabled) {
+    if (previewBusy) return;
+    previewBusy = true;
+    const btn = $("btn-toggle-preview");
+    if (btn) btn.disabled = true;
+    try {
+      const nextSnap = await invoke("set_preview_enabled", { enabled: nextEnabled });
+      previewBusy = false;
+      if (nextSnap) {
+        applySnapshot(nextSnap);
+      } else if (btn) {
+        btn.disabled = false;
+      }
+      showToast(
+        nextEnabled
+          ? "Aperçu vidéo réactivé"
+          : "Aperçu désactivé — OBS et l’enregistrement continuent (CPU réduit)"
+      );
+    } catch (err) {
+      previewBusy = false;
+      if (btn) btn.disabled = false;
+      showToast(`Erreur aperçu : ${err}`);
+    }
+  }
+
+  $("btn-toggle-preview").addEventListener("click", () => {
+    const currentlyEnabled = !currentSnap || currentSnap.settings.enable_preview !== false;
+    setPreviewEnabled(!currentlyEnabled);
+  });
+
+  $("btn-standby-enable-preview").addEventListener("click", () => setPreviewEnabled(true));
 
   $("btn-toggle-record").addEventListener("click", async () => {
     try {
@@ -791,7 +883,9 @@
     await refreshLogs();
     await listen("gl310://snapshot", (ev) => applySnapshot(ev.payload));
     document.addEventListener("visibilitychange", async () => {
-      if (!document.hidden) {
+      if (document.hidden) {
+        disconnectPreview();
+      } else {
         const fresh = await invoke("get_snapshot");
         applySnapshot(fresh);
       }

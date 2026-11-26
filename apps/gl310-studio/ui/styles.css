@@ -554,6 +554,20 @@ body {
   color: #fecdd3;
 }
 
+.btn-preview {
+  border-color: rgba(45, 212, 191, 0.32);
+}
+
+.btn-preview.is-off {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.48);
+  color: #fde68a;
+}
+
+.btn-preview.is-off:not(:disabled):hover {
+  border-color: rgba(245, 158, 11, 0.72);
+}
+
 /* Right Console Rack */
 .console-inner {
   display: flex;

@@ -80,6 +80,17 @@ fn update_settings(state: State<'_, AppState>, settings: Settings) -> Result<Set
 }
 
 #[tauri::command]
+async fn set_preview_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<EngineSnapshot, String> {
+    let engine = Arc::clone(&state.engine);
+    tauri::async_runtime::spawn_blocking(move || engine.set_preview_enabled(enabled))
+        .await
+        .map_err(|e| format!("Set preview task failed: {e}"))?
+}
+
+#[tauri::command]
 fn set_led(state: State<'_, AppState>, mode: LedMode) -> Result<(), String> {
     state.engine.set_led(mode)
 }
@@ -201,8 +212,10 @@ async fn firmware_import(
 fn toggle_main_window(app: &tauri::AppHandle, engine: &CaptureEngine) {
     if let Some(win) = app.get_webview_window("main") {
         if win.is_visible().unwrap_or(false) {
+            engine.set_window_visible(false);
             let _ = win.hide();
         } else {
+            engine.set_window_visible(true);
             let _ = win.show();
             let _ = win.unminimize();
             let _ = win.set_focus();
@@ -240,11 +253,23 @@ fn main() {
             // Keeps idle WebKitGTK CPU near 0% and eliminates 8 Hz IPC/repaint storms.
             let handle = thread::spawn(move || {
                 let mut last_payload = String::new();
+                let mut last_visible = true;
                 while !emitter_stop_bg.load(Ordering::Relaxed) {
                     let visible = app_handle
                         .get_webview_window("main")
-                        .and_then(|w| w.is_visible().ok())
+                        .map(|w| {
+                            let vis = w.is_visible().unwrap_or(true);
+                            let min = w.is_minimized().unwrap_or(false);
+                            vis && !min
+                        })
                         .unwrap_or(true);
+                    if visible != last_visible {
+                        last_visible = visible;
+                        engine_emitter.set_window_visible(visible);
+                        if visible {
+                            last_payload.clear();
+                        }
+                    }
                     if !visible {
                         thread::sleep(Duration::from_millis(400));
                         continue;
@@ -364,6 +389,7 @@ fn main() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if !quitting_win.load(Ordering::SeqCst) && tray_active_win.load(Ordering::SeqCst) {
                     api.prevent_close();
+                    engine_win.set_window_visible(false);
                     let _ = window.hide();
                     engine_win.push_log(
                         "info",
@@ -380,6 +406,7 @@ fn main() {
             start_capture,
             stop_capture,
             update_settings,
+            set_preview_enabled,
             set_led,
             set_audio_input,
             set_analog_volume,
