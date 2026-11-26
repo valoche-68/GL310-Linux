@@ -10,6 +10,7 @@
 [![Rust](https://img.shields.io/badge/Rust-Userspace%20libusb-38bdf8.svg)](Cargo.toml)
 [![Tauri v2](https://img.shields.io/badge/GUI-Tauri%20v2%20(0%20node__modules)-f43f5e.svg)](apps/gl310-studio)
 [![Linux](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20ARM64%20(RPi)-10b981.svg)](#raspberry-pi-kvm-mode)
+[![Languages](https://img.shields.io/badge/UI%20Languages-English%20(default)%20%7C%20Fran%C3%A7ais-0ea5e9.svg)](#overview)
 [![Release](https://img.shields.io/badge/Release-v0.1.0%20(.deb%20%7C%20.AppImage%20%7C%20CLI)-6366f1.svg)](https://github.com/valoche-68/GL310-Linux/releases/latest)
 
 </div>
@@ -44,7 +45,10 @@
    - **Full Audio & Jack Routing** — Hardware switching between **HDMI IN** (`MCU 0x2E = 0x04`) and **3.5 mm Jack AUDIO IN** (`MCU 0x2E = 0x05`), analog line-in gain (`MCU 0x41`, `1–11`), encoder digital gain (`0–15`), **3.5 mm AUDIO OUT** passthrough (`aou_pass_en`), virtual PipeWire microphone **`GL310 Audio`**, and live **PC speaker monitoring**.
    - **Hardware Safety & Recovery** — Volatile RAM firmware boot only (unplugging 10 s resets the board), mailbox liveness check on wake/resume, automatic encoder cleanup on restart, and hardcoded refusal of permanent MCU profile registers `0x47` / `0x49`.
 2. **`gl310-cli`** *(zero GUI dependencies, `x86_64` & `aarch64`/`armv7`)* — Classic universal Linux command-line utility (`doctor`, `firmware`, `info`, `signal`, `dry-test`, `led`, `button`, `capture`, `record`, `v4l2`, `obs`, `kvm`, `completions`) + ready-to-use `systemd/gl310-kvm.service`.
-3. **`gl310-studio`** *(Tauri v2 multi-Linux desktop app)* — Modern dark broadcast console written in **pure HTML5 / CSS3 / ES JS (zero `node_modules`)**, featuring system tray integration (close-to-tray background operation + right-click start/stop/quit menu), custom in-DOM dark dropdowns (Wayland/WebKitGTK safe), 0% idle WebKit CPU usage, persistent logs (`~/.local/state/gl310-linux/studio.log`), and local **`.deb`** + **`.AppImage`** packaging.
+3. **`gl310-studio`** *(Tauri v2 multi-Linux desktop app)* — Modern dark broadcast console written in **pure HTML5 / CSS3 / ES JS (zero `node_modules`)**, featuring:
+   - **Bilingual English & French UI (`EN / FR`)** — English by default, with an instant **`EN / FR`** switcher right in the top bar that also translates the Linux system tray menu live (persisted across restarts).
+   - **Live Preview ON/OFF toggle & automatic tray pause** — Disable the Studio preview with one click (or minimize/close to the system tray) to stop H.264 → MJPEG preview decoding and save CPU without interrupting OBS (`/dev/video14`, `GL310 Audio`, SRT, HTTP) or active `.mp4` recordings.
+   - **System tray, Wayland/WebKitGTK optimization & packaging** — Close-to-tray background operation, custom in-DOM dark dropdowns, ~0% idle WebKit CPU usage, persistent logs (`~/.local/state/gl310-linux/studio.log`), and local **`.deb`** + **`.AppImage`** builds.
 
 ```mermaid
 flowchart TB
@@ -83,7 +87,7 @@ flowchart TB
 | Feature | **GL310-Linux (This Project)** | `Fenysk/capture-consoles-salon` | `AlexXanderGrib/lgp-lite-linux-driver` | `schineaj23/gl310` |
 |---|---|---|---|---|
 | **Driver Architecture** | 100% Userspace Rust (`libusb`) — no DKMS / kernel rebuild | Userspace Rust (`libusb`) | Out-of-tree Linux kernel module (MJPEG) + Python CLI (H.264) | Research / reversing tools |
-| **Linux Desktop GUI** | ✅ Yes (Tauri v2 — `.deb` & `.AppImage` multi-Linux, pure HTML/CSS/JS, system tray) | ✅ Yes (`egui` desktop GUI) | ❌ No | ❌ No (macOS app only) |
+| **Linux Desktop GUI** | ✅ Yes (Tauri v2 — `.deb` & `.AppImage`, **EN / FR bilingual**, live preview toggle, system tray) | ✅ Yes (`egui` desktop GUI) | ❌ No | ❌ No (macOS app only) |
 | **Universal Linux CLI & Raspberry Pi KVM (Hardware MJPEG + `systemd`)** | ✅ Yes (`gl310-cli` + `systemd/gl310-kvm.service`, 0 GUI deps) | ❌ No | ⚠️ Partial (MJPEG via kernel module only) | ❌ No |
 | **H.264 + AAC Capture (OBS & `.mp4`)** | ✅ Yes (Auto 1080p30/720p60 + forced 30/25/24 fps) | ✅ Yes | ✅ Yes (Python script) | ⚠️ Video only (no audio) |
 | **Hardware MJPEG Mode (Zero-CPU KVM)** | ✅ Yes (640×360..1920×1080, HTTP `/mjpeg` + native zero-`ffmpeg` V4L2 MJPEG `ioctl`) | ❌ No | ✅ Yes (kernel module) | ❌ No |
@@ -157,7 +161,7 @@ Every upload enforces strict SHA-256 verification before touching USB:
 Downloads the archived official WHQL-signed AVerMedia `v3.2802.64.40` driver archive from Archive.org, verifies its SHA-256 & MD5 (`6aa363d7d7458dd08f021277353d6f2f`), extracts only the two `.bin` files in memory (**zero Windows binary execution**), verifies both SHA-256 digests, and installs them into `~/.local/share/gl310-linux/firmware/`:
 
 ```bash
-# Via the CLI (or click "Télécharger (Audité Archive.org)" inside GL310 Studio -> Boîtier & Logs):
+# Via the CLI (or click "Download (Audited Archive.org)" inside GL310 Studio -> Device & Logs):
 gl310-cli firmware fetch
 
 # Or via the standalone shell audit script (also inspects the WHQL Authenticode signature via OpenSSL):
@@ -232,7 +236,7 @@ gl310-cli completions bash > ~/.local/share/bash-completion/completions/gl310-cl
 
 > **Hardware Latency Note:** Because the GL310 is a **USB 2.0 hardware H.264 encoder**, H.264+AAC capture has an inherent hardware encoding latency of ~250–400 ms (just like RECentral on Windows). Always use the box's **zero-latency hardware HDMI OUT passthrough** to play on a TV/monitor. For minimal USB preview latency (BIOS/KVM without audio), switch to **KVM (Hardware MJPEG)** mode; for faster OBS lock in H.264 mode, set **GOP Interval** to **1 second**.
 
-> **Audio & Diagnostics:** If your console outputs Dolby Digital / DTS bitstream audio, switch it to **Uncompressed Stereo LPCM** so the GL310 captures audio cleanly. Persistent logs (including USB/HDMI/HDCP events and `ffmpeg` diagnostics) are written to `~/.local/state/gl310-linux/studio.log` and visible live in **GL310 Studio → Boîtier & Logs**.
+> **Audio & Diagnostics:** If your console outputs Dolby Digital / DTS bitstream audio, switch it to **Uncompressed Stereo LPCM** so the GL310 captures audio cleanly. Persistent logs (including USB/HDMI/HDCP events and `ffmpeg` diagnostics) are written to `~/.local/state/gl310-linux/studio.log` and visible live in **GL310 Studio → Device & Logs**.
 
 ---
 

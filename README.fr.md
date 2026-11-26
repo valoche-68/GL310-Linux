@@ -10,6 +10,7 @@
 [![Rust](https://img.shields.io/badge/Rust-libusb%20Espace%20Utilisateur-38bdf8.svg)](Cargo.toml)
 [![Tauri v2](https://img.shields.io/badge/GUI-Tauri%20v2%20(0%20node__modules)-f43f5e.svg)](apps/gl310-studio)
 [![Linux](https://img.shields.io/badge/Plateforme-Linux%20x86__64%20%7C%20ARM64%20(RPi)-10b981.svg)](#mode-kvm-raspberry-pi)
+[![Langues](https://img.shields.io/badge/Interface-English%20(d%C3%A9faut)%20%7C%20Fran%C3%A7ais-0ea5e9.svg)](#présentation)
 [![Release](https://img.shields.io/badge/Release-v0.1.0%20(.deb%20%7C%20.AppImage%20%7C%20CLI)-6366f1.svg)](https://github.com/valoche-68/GL310-Linux/releases/latest)
 
 </div>
@@ -44,7 +45,10 @@
    - **Audio & Jacks 3,5 mm complets** — Bascule matérielle **HDMI IN** (`MCU 0x2E = 0x04`) ↔ **Jack 3,5 mm AUDIO IN** (`MCU 0x2E = 0x05`), gain ligne analogique (`MCU 0x41`, `1–11`), gain numérique encodeur (`0–15`), passthrough **Jack 3,5 mm AUDIO OUT** (`aou_pass_en`), micro virtuel PipeWire **`GL310 Audio`** et **Monitoring PC** en direct.
    - **Sécurité matérielle & reprise fiable** — Chargement des firmwares uniquement en RAM volatile (débrancher 10 s réinitialise le boîtier), test de santé du mailbox ARM au réveil, nettoyage encodeur automatique au redémarrage, et blocage en dur des registres MCU permanents `0x47` / `0x49`.
 2. **`gl310-cli`** *(CLI classique universelle Linux, zéro dépendance GUI, `x86_64` & `aarch64`/`armv7`)* — Outil terminal complet (`doctor`, `firmware`, `info`, `signal`, `dry-test`, `led`, `button`, `capture`, `record`, `v4l2`, `obs`, `kvm`, `completions`) + service `systemd/gl310-kvm.service`.
-3. **`gl310-studio`** *(Application Desktop **Tauri v2**, multi-Linux)* — Console studio broadcast sombre écrite en **HTML5 / CSS3 / JS ES pur (zéro `node_modules`)**, avec icône en barre système (réduction en arrière-plan + menu clic droit démarrer/arrêter/quitter), menus déroulants sombres sur mesure (compatibles Wayland/WebKitGTK), `0 % CPU` au repos, journaux persistants (`~/.local/state/gl310-linux/studio.log`) et paquets **`.deb`** + **`.AppImage`**.
+3. **`gl310-studio`** *(Application Desktop **Tauri v2**, multi-Linux)* — Console studio broadcast sombre écrite en **HTML5 / CSS3 / JS ES pur (zéro `node_modules`)**, incluant :
+   - **Interface bilingue Anglais / Français (`EN / FR`)** — En anglais par défaut (standard GitHub), avec un sélecteur instantané **`EN / FR`** directement dans la barre supérieure traduisant l’interface et le menu de la barre système en direct (préférence sauvegardée).
+   - **Bouton Aperçu ON/OFF + mise en veille auto en barre système** — Coupez l’aperçu vidéo en un clic (ou réduisez la fenêtre dans la barre système) pour arrêter le décodage H.264 → MJPEG et économiser du CPU sans couper OBS (`/dev/video14`, `GL310 Audio`, SRT, HTTP) ni un enregistrement `.mp4` en cours.
+   - **Barre système, optimisation Wayland/WebKitGTK & paquets** — Réduction en arrière-plan, menus déroulants sombres sur mesure, `~0 % CPU` au repos, journaux persistants (`~/.local/state/gl310-linux/studio.log`) et paquets **`.deb`** + **`.AppImage`**.
 
 ```mermaid
 flowchart TB
@@ -83,7 +87,7 @@ flowchart TB
 | Fonctionnalité | **GL310-Linux (Ce projet)** | `Fenysk/capture-consoles-salon` | `AlexXanderGrib/lgp-lite-linux-driver` | `schineaj23/gl310` |
 |---|---|---|---|---|
 | **Architecture pilote** | 100 % espace utilisateur Rust (`libusb`) — aucun module noyau | Espace utilisateur Rust (`libusb`) | Module noyau hors-arbre (MJPEG) + CLI Python (H.264) | Outils de recherche |
-| **Application graphique Linux** | ✅ Oui (Tauri v2 — `.deb` & `.AppImage` multi-Linux, HTML/CSS/JS pur, barre système) | ✅ Oui (GUI `egui`) | ❌ Non | ❌ Non (app macOS uniquement) |
+| **Application graphique Linux** | ✅ Oui (Tauri v2 — `.deb` & `.AppImage`, **bilingue EN / FR**, bouton aperçu ON/OFF, barre système) | ✅ Oui (GUI `egui`) | ❌ Non | ❌ Non (app macOS uniquement) |
 | **CLI universelle Linux & Raspberry Pi KVM (MJPEG matériel + `systemd`)** | ✅ Oui (`gl310-cli` + `systemd/gl310-kvm.service`, 0 dépendance GUI) | ❌ Non | ⚠️ Partiel (MJPEG via module noyau uniquement) | ❌ Non |
 | **Capture H.264 + AAC (OBS & `.mp4`)** | ✅ Oui (Auto 1080p30/720p60 + 30/25/24 fps forcé) | ✅ Oui | ✅ Oui (script Python) | ⚠️ Vidéo seule (sans audio) |
 | **Mode MJPEG matériel (KVM zéro CPU)** | ✅ Oui (640×360..1920×1080, HTTP `/mjpeg` + V4L2 MJPEG natif sans `ffmpeg` via `ioctl`) | ❌ Non | ✅ Oui (module noyau) | ❌ Non |

@@ -29,7 +29,7 @@ use crate::outputs::{remove_v4l2_device, ActiveOutputs, LogSink, MonitorControl,
 use crate::proto::{HdmiSignal, McuEvent};
 use crate::recorder::{save_snapshot, RecordingStatus, RecordingSummary, TsRecorder};
 use crate::settings::{
-    default_config_path, AudioInput, ButtonAction, CaptureMode, LedMode, Settings,
+    default_config_path, AudioInput, ButtonAction, CaptureMode, LedMode, Settings, UiLanguage,
 };
 use crate::stream::{MjpegDeframer, StreamHub, TsDeframer, TsStats};
 
@@ -506,6 +506,16 @@ impl CaptureEngine {
         let _ = self.cmd_tx.send(EngineCmd::SetWindowVisible(visible));
     }
 
+    /// Persist the Studio UI language (`en` or `fr`) without disturbing capture or recording.
+    pub fn set_ui_language(&self, lang: UiLanguage) -> Result<EngineSnapshot, String> {
+        {
+            let mut g = self.state.lock().unwrap();
+            g.settings.ui_language = lang;
+            let _ = g.settings.save(&self.config_path);
+        }
+        Ok(self.snapshot())
+    }
+
     pub fn start_recording(&self, path_override: Option<PathBuf>) -> Result<RecordingStatus, String> {
         let mut g = self.state.lock().unwrap();
         if g.phase != EnginePhase::Streaming {
@@ -561,7 +571,7 @@ impl CaptureEngine {
         };
         if mode == CaptureMode::H264Aac && !enable_preview && self.hub.latest_jpeg().is_none() {
             return Err(
-                "Aperçu désactivé — réactivez l’aperçu pour prendre une capture photo en mode H.264"
+                "Preview disabled — re-enable preview to take a JPEG snapshot in H.264 mode"
                     .to_string(),
             );
         }
@@ -881,7 +891,7 @@ fn engine_worker_loop(
                             "warn",
                             format!("Cannot start capture: GL310 device not ready ({msg})"),
                         );
-                        Err(format!("Boîtier GL310 non prêt : {msg}"))
+                        Err(format!("GL310 device not ready: {msg}"))
                     };
                     if let Some(tx) = reply {
                         let _ = tx.send(result);
@@ -1204,7 +1214,7 @@ fn engine_worker_loop(
                                         push_state_log(
                                             &state,
                                             "warn",
-                                            "Aperçu désactivé — réactivez l’aperçu pour prendre une capture photo en mode H.264",
+                                            "Preview disabled — re-enable preview to take a JPEG snapshot in H.264 mode",
                                         );
                                     } else {
                                         match save_snapshot(&hub, Path::new(&rec_dir)) {
@@ -1409,14 +1419,14 @@ fn sync_preview_bridge(
     if bridge_changed || prev_active != actual_active {
         let msg = if actual_active {
             if !window_visible && cfg.mode == CaptureMode::H264Aac {
-                "Aperçu réveillé pour un client HTTP /mjpeg externe"
+                "Preview woke up for an external HTTP /mjpeg client"
             } else {
-                "Aperçu vidéo réactivé"
+                "Video preview enabled"
             }
         } else if !cfg.enable_preview {
-            "Aperçu vidéo désactivé (économie CPU — OBS/V4L2/REC inchangés)"
+            "Video preview disabled (CPU saving — OBS/V4L2/REC unchanged)"
         } else {
-            "Aperçu mis en veille (fenêtre réduite dans la barre système)"
+            "Preview paused (window minimized to system tray)"
         };
         push_state_log(state, "info", msg);
     }
@@ -1648,7 +1658,7 @@ mod tests {
     fn live_ui_settings_do_not_require_encoder_restart() {
         let base = Settings::default();
 
-        // Changing button_action, led_mode, pc_monitor, enable_preview, or recordings_dir must NOT abort recordings
+        // Changing button_action, led_mode, pc_monitor, enable_preview, ui_language, or recordings_dir must NOT abort recordings
         let mut live = base.clone();
         live.button_action = ButtonAction::Snapshot;
         live.led_mode = LedMode::Clockwise;
@@ -1656,6 +1666,7 @@ mod tests {
         live.pc_monitor_volume = 55;
         live.pc_monitor_muted = true;
         live.enable_preview = false;
+        live.ui_language = UiLanguage::Fr;
         live.recordings_dir = "/tmp/gl310-recs".to_string();
         assert!(!settings_require_restart(&base, &live));
 
@@ -1937,7 +1948,7 @@ mod tests {
         assert!(snap_off.v4l2_active);
         assert!(snap_off.pipewire_active);
         let snap_err = engine.take_snapshot().unwrap_err();
-        assert!(snap_err.contains("Aperçu désactivé"), "Unexpected snapshot err: {snap_err}");
+        assert!(snap_err.contains("Preview disabled"), "Unexpected snapshot err: {snap_err}");
 
         thread::sleep(Duration::from_millis(600));
         let s_during_off = engine.snapshot();
@@ -2004,6 +2015,19 @@ mod tests {
         let snap = engine.snapshot();
         assert_eq!(snap.stream_generation, 0);
         assert_ne!(snap.display_host, "0.0.0.0");
+        assert_eq!(snap.settings.ui_language, UiLanguage::En);
+
+        // Switching language updates snapshot immediately without restarting anything
+        let snap_fr = engine.set_ui_language(UiLanguage::Fr).unwrap();
+        assert_eq!(snap_fr.settings.ui_language, UiLanguage::Fr);
+        let snap_en = engine.set_ui_language(UiLanguage::En).unwrap();
+        assert_eq!(snap_en.settings.ui_language, UiLanguage::En);
+
+        // Snapshot while preview is disabled in H.264 returns a clear English message
+        let _ = engine.set_preview_enabled(false).unwrap();
+        let err = engine.take_snapshot().unwrap_err();
+        assert!(err.contains("Preview disabled"), "Unexpected error: {err}");
+
         let t0 = Instant::now();
         engine.shutdown();
         engine.shutdown(); // idempotent second call

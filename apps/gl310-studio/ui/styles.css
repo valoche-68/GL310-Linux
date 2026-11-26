@@ -201,14 +201,56 @@ body {
   background: var(--hairline);
 }
 
-/* Mode Segmented Switch */
-.mode-switch {
+/* Mode & Language Segmented Controls */
+.top-right-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mode-switch,
+.lang-switch {
   display: inline-flex;
   background: var(--bg-input);
   border: 1px solid var(--hairline);
   border-radius: 14px;
   padding: 4px;
   gap: 4px;
+}
+
+.lang-switch {
+  gap: 3px;
+}
+
+.lang-seg {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  min-width: 34px;
+  min-height: 36px;
+  padding: 0 9px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 240ms var(--ease-spring), opacity 240ms var(--ease-spring), background-color 240ms var(--ease-spring), color 200ms var(--ease-spring);
+}
+
+.lang-seg:hover {
+  color: var(--text-primary);
+}
+
+.lang-seg.active {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(56, 189, 248, 0.14));
+  color: var(--accent-teal);
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.35);
 }
 
 .mode-seg {
@@ -576,8 +618,8 @@ body {
 }
 
 .tab-bar {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
+  align-items: center;
   gap: 4px;
   padding: 10px 10px 8px;
   border-bottom: 1px solid var(--hairline);
@@ -585,13 +627,15 @@ body {
 
 .tab-btn {
   appearance: none;
+  flex: 1 1 auto;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 600;
-  padding: 9px 6px;
+  white-space: nowrap;
+  padding: 9px 8px;
   border-radius: 10px;
   cursor: pointer;
   transition: transform 240ms var(--ease-spring), background-color 240ms var(--ease-spring);

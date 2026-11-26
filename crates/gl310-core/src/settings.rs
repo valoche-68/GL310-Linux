@@ -177,6 +177,14 @@ pub enum ButtonAction {
     None,
 }
 
+/// User interface language for GL310 Studio (English by default, live switchable to French).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiLanguage {
+    En,
+    Fr,
+}
+
 /// Complete validated settings for a GL310 capture session.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -215,6 +223,8 @@ pub struct Settings {
     pub expose_lan: bool,
     /// Studio live video preview (disabling pauses PreviewBridge H.264->MJPEG transcoding to save CPU).
     pub enable_preview: bool,
+    /// Studio UI language (English by default, switchable live in the top bar).
+    pub ui_language: UiLanguage,
 
     /// Hardware interaction & recording path.
     pub led_mode: LedMode,
@@ -254,6 +264,7 @@ impl Default for Settings {
             http_port: 4848,
             expose_lan: false,
             enable_preview: true,
+            ui_language: UiLanguage::En,
             led_mode: LedMode::Auto,
             button_action: ButtonAction::ToggleRecord,
             recordings_dir: default_rec_dir,
@@ -478,5 +489,7 @@ mod tests {
         assert_eq!(serde_json::to_string(&LedMode::Clockwise).unwrap(), "\"clockwise\"");
         assert_eq!(serde_json::to_string(&ButtonAction::ToggleRecord).unwrap(), "\"toggle_record\"");
         assert_eq!(serde_json::to_string(&ButtonAction::ToggleCapture).unwrap(), "\"toggle_capture\"");
+        assert_eq!(serde_json::to_string(&UiLanguage::En).unwrap(), "\"en\"");
+        assert_eq!(serde_json::to_string(&UiLanguage::Fr).unwrap(), "\"fr\"");
     }
 }

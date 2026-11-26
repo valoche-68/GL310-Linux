@@ -13,17 +13,52 @@ use serde::Serialize;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Emitter, Manager, RunEvent, State, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, State, WindowEvent, Wry};
 
 use gl310_core::firmware::{
     fetch_and_install_official_firmware, import_firmware_from_path, FirmwareStatus,
 };
 use gl310_core::recorder::{RecordingStatus, RecordingSummary};
-use gl310_core::settings::{AudioInput, LedMode, Settings};
+use gl310_core::settings::{AudioInput, LedMode, Settings, UiLanguage};
 use gl310_core::{run_doctor, CaptureEngine, DoctorReport, EnginePhase, EngineSnapshot, LogEntry};
+
+struct TrayMenuItems {
+    toggle: MenuItem<Wry>,
+    start: MenuItem<Wry>,
+    stop: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
+}
+
+fn tray_labels(lang: UiLanguage) -> (&'static str, &'static str, &'static str, &'static str) {
+    match lang {
+        UiLanguage::En => (
+            "Show / Hide GL310 Studio",
+            "Start Capture",
+            "Stop Capture",
+            "Quit GL310 Studio",
+        ),
+        UiLanguage::Fr => (
+            "Afficher / Masquer GL310 Studio",
+            "Démarrer la capture",
+            "Arrêter la capture",
+            "Quitter GL310 Studio",
+        ),
+    }
+}
+
+fn update_tray_labels(tray_items: &Mutex<Option<TrayMenuItems>>, lang: UiLanguage) {
+    if let Some(ref items) = *tray_items.lock().unwrap() {
+        let (lbl_toggle, lbl_start, lbl_stop, lbl_quit) = tray_labels(lang);
+        let _ = items.toggle.set_text(lbl_toggle);
+        let _ = items.start.set_text(lbl_start);
+        let _ = items.stop.set_text(lbl_stop);
+        let _ = items.quit.set_text(lbl_quit);
+    }
+}
 
 struct AppState {
     engine: Arc<CaptureEngine>,
+    tray_items: Arc<Mutex<Option<TrayMenuItems>>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -88,6 +123,13 @@ async fn set_preview_enabled(
     tauri::async_runtime::spawn_blocking(move || engine.set_preview_enabled(enabled))
         .await
         .map_err(|e| format!("Set preview task failed: {e}"))?
+}
+
+#[tauri::command]
+fn set_language(state: State<'_, AppState>, language: UiLanguage) -> Result<EngineSnapshot, String> {
+    let snap = state.engine.set_ui_language(language)?;
+    update_tray_labels(&state.tray_items, language);
+    Ok(snap)
 }
 
 #[tauri::command]
@@ -241,12 +283,15 @@ fn main() {
     let tray_active = Arc::new(AtomicBool::new(false));
     let tray_active_setup = Arc::clone(&tray_active);
     let tray_active_win = Arc::clone(&tray_active);
+    let tray_items: Arc<Mutex<Option<TrayMenuItems>>> = Arc::new(Mutex::new(None));
+    let tray_items_setup = Arc::clone(&tray_items);
+    let initial_lang = engine.snapshot().settings.ui_language;
     let quitting = Arc::new(AtomicBool::new(false));
     let quitting_tray = Arc::clone(&quitting);
     let quitting_win = Arc::clone(&quitting);
 
     let app = tauri::Builder::default()
-        .manage(AppState { engine })
+        .manage(AppState { engine, tray_items })
         .setup(move |app| {
             let app_handle = app.handle().clone();
             // Emit live status & VU telemetry ONLY when the window is visible and state actually changed.
@@ -294,28 +339,31 @@ fn main() {
 
             // System tray icon (bottom-right notification area on KDE / GNOME / Linux)
             // Allows closing the window to background while keeping capture/OBS active,
-            // and quitting cleanly via right-click -> "Quitter GL310 Studio".
+            // and quitting cleanly via right-click -> "Quit GL310 Studio".
             let build_tray = (|| -> tauri::Result<()> {
-                let item_toggle = MenuItem::with_id(
-                    app,
-                    "toggle",
-                    "Afficher / Masquer GL310 Studio",
-                    true,
-                    None::<&str>,
-                )?;
+                let (lbl_toggle, lbl_start, lbl_stop, lbl_quit) = tray_labels(initial_lang);
+                let item_toggle =
+                    MenuItem::with_id(app, "toggle", lbl_toggle, true, None::<&str>)?;
                 let sep1 = PredefinedMenuItem::separator(app)?;
                 let item_start =
-                    MenuItem::with_id(app, "start", "Démarrer la capture", true, None::<&str>)?;
+                    MenuItem::with_id(app, "start", lbl_start, true, None::<&str>)?;
                 let item_stop =
-                    MenuItem::with_id(app, "stop", "Arrêter la capture", true, None::<&str>)?;
+                    MenuItem::with_id(app, "stop", lbl_stop, true, None::<&str>)?;
                 let sep2 = PredefinedMenuItem::separator(app)?;
                 let item_quit =
-                    MenuItem::with_id(app, "quit", "Quitter GL310 Studio", true, None::<&str>)?;
+                    MenuItem::with_id(app, "quit", lbl_quit, true, None::<&str>)?;
 
                 let menu = Menu::with_items(
                     app,
                     &[&item_toggle, &sep1, &item_start, &item_stop, &sep2, &item_quit],
                 )?;
+
+                *tray_items_setup.lock().unwrap() = Some(TrayMenuItems {
+                    toggle: item_toggle,
+                    start: item_start,
+                    stop: item_stop,
+                    quit: item_quit,
+                });
 
                 let tray_icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))
                     .ok()
@@ -393,7 +441,7 @@ fn main() {
                     let _ = window.hide();
                     engine_win.push_log(
                         "info",
-                        "GL310 Studio réduit dans la barre système (clic droit sur l'icône → Quitter pour fermer).",
+                        "GL310 Studio minimized to system tray (right-click tray icon -> Quit to exit).",
                     );
                 }
             }
@@ -407,6 +455,7 @@ fn main() {
             stop_capture,
             update_settings,
             set_preview_enabled,
+            set_language,
             set_led,
             set_audio_input,
             set_analog_volume,
