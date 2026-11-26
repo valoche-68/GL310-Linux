@@ -1,0 +1,5 @@
+# AVerMedia Live Gamer Portable Lite (GL310 / C835)
+# Grants non-root USB access to active console users (uaccess) and group 'video'
+# (allowing headless Raspberry Pi / systemd KVM services to run without root).
+SUBSYSTEM=="usb", ATTR{idVendor}=="07ca", ATTR{idProduct}=="c835", MODE="0660", GROUP="video", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="07ca", ATTR{idProduct}=="d835", MODE="0660", GROUP="video", TAG+="uaccess"

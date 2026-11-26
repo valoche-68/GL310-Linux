@@ -1,0 +1,18 @@
+[package]
+name = "gl310-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Universal Linux CLI and Raspberry Pi KVM daemon for AVerMedia LGP Lite (GL310)"
+
+[[bin]]
+name = "gl310-cli"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+ctrlc = "3"
+gl310-core = { path = "../gl310-core" }
+serde_json = "1"

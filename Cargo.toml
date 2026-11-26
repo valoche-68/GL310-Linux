@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gl310-core",
+    "crates/gl310-cli",
+    "apps/gl310-studio/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/valoche-68/GL310-Linux"
+authors = ["valoche-68 and GL310-Linux contributors"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+opt-level = 3

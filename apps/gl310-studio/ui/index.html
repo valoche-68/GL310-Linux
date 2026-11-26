@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GL310 Studio — AVerMedia LGP Lite</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient-bg" aria-hidden="true"></div>
+
+  <div class="studio-shell">
+    <!-- Floating Machined Top Island -->
+    <header class="top-island bezel-outer">
+      <div class="top-island-inner bezel-inner">
+        <div class="brand-cluster">
+          <img class="brand-logo" src="assets/icon.svg" alt="" width="30" height="30">
+          <div class="brand-meta">
+            <span class="eyebrow">AVerMedia 07ca:c835</span>
+            <h1 class="brand-title">GL310 Studio</h1>
+          </div>
+          <div id="device-pill" class="status-pill state-absent" role="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="device-pill-text">Recherche USB…</span>
+          </div>
+        </div>
+
+        <div class="telemetry-strip">
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Signal HDMI</span>
+            <span id="signal-readout" class="telemetry-value mono">Aucun signal</span>
+          </div>
+          <div class="telemetry-divider" aria-hidden="true"></div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Débit</span>
+            <span id="bitrate-readout" class="telemetry-value mono">0.0 Mbit/s</span>
+          </div>
+          <div class="telemetry-divider" aria-hidden="true"></div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Erreurs TS</span>
+            <span id="ts-errors-readout" class="telemetry-value mono">0</span>
+          </div>
+        </div>
+
+        <div class="mode-switch" role="group" aria-label="Mode de capture matériel">
+          <button id="mode-btn-h264" class="mode-seg active" type="button" data-mode="h264_aac">
+            Studio OBS
+            <span class="mode-sub">H.264 + AAC</span>
+          </button>
+          <button id="mode-btn-mjpeg" class="mode-seg" type="button" data-mode="mjpeg">
+            KVM
+            <span class="mode-sub">MJPEG HW</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Asymmetric Studio Workspace -->
+    <main class="workspace-grid">
+      <!-- Left: Broadcast 16:9 Monitor + Stereo VU + Transport Dock -->
+      <section class="stage-column" aria-label="Moniteur vidéo et transport">
+        <div class="monitor-bezel bezel-outer">
+          <div class="monitor-core bezel-inner">
+            <div class="monitor-viewport">
+              <img id="preview-img" class="preview-stream hidden" alt="Aperçu en direct AVerMedia GL310">
+
+              <!-- Standby / No-Signal / Actionable Notice Overlay -->
+              <div id="monitor-standby" class="standby-overlay">
+                <div class="standby-ring" aria-hidden="true">
+                  <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="4" width="20" height="14" rx="2.5"></rect>
+                    <path d="M8 21h8M12 18v3"></path>
+                    <path d="M9.5 11l5-2.8v5.6z"></path>
+                  </svg>
+                </div>
+                <p id="standby-title" class="standby-title">En attente du boîtier GL310</p>
+                <p id="standby-sub" class="standby-sub">Branchez votre AVerMedia LGP Lite en USB 2.0 (07ca:c835) et connectez une source HDMI sans HDCP.</p>
+                <div id="standby-actions" class="standby-actions hidden">
+                  <button id="btn-standby-refresh" class="btn-ghost" type="button">Réanalyser l’USB</button>
+                  <button id="btn-standby-fw" class="btn-ghost hidden" type="button">Ouvrir l’assistant Firmware</button>
+                </div>
+              </div>
+
+              <!-- Live Corner Tally HUD -->
+              <div class="hud-top-left">
+                <span id="hud-mode-badge" class="hud-chip mono">H.264 + AAC</span>
+                <span id="hud-res-badge" class="hud-chip mono hidden">1920×1080 @ 30</span>
+                <span id="hud-warn-badge" class="hud-chip hud-warn hidden">HDCP / NON-PCM</span>
+              </div>
+              <div id="hud-rec-tally" class="hud-rec hidden" aria-live="polite">
+                <span class="rec-dot" aria-hidden="true"></span>
+                <span class="mono">REC</span>
+                <span id="rec-timer" class="mono">00:00:00</span>
+                <span id="rec-size" class="mono">0.0 Mo</span>
+              </div>
+            </div>
+
+            <!-- Real-Time Stereo Broadcast VU Meter -->
+            <div class="vu-deck" aria-label="VU-mètre stéréo L et R">
+              <div class="vu-header">
+                <span class="vu-title">AUDIO BUS · STEREO L/R</span>
+                <span id="vu-db-readout" class="mono vu-db">-60.0 / -60.0 dBFS</span>
+              </div>
+              <div class="vu-row">
+                <span class="vu-ch mono">L</span>
+                <div class="vu-track"><div id="vu-bar-l" class="vu-fill"></div></div>
+              </div>
+              <div class="vu-row">
+                <span class="vu-ch mono">R</span>
+                <div class="vu-track"><div id="vu-bar-r" class="vu-fill"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transport Action Bar (Double Bezel) -->
+        <div class="transport-bezel bezel-outer">
+          <div class="transport-inner bezel-inner">
+            <button id="btn-toggle-capture" class="cta-primary" type="button">
+              <span id="btn-capture-label">Démarrer la capture</span>
+              <span class="cta-icon-orb" aria-hidden="true">
+                <svg id="icon-capture-play" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="6 4 20 12 6 20 6 4"></polygon>
+                </svg>
+                <svg id="icon-capture-stop" class="hidden" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+                </svg>
+              </span>
+            </button>
+
+            <div class="transport-secondary">
+              <button id="btn-toggle-record" class="btn-rec" type="button" disabled>
+                <span class="btn-rec-dot" aria-hidden="true"></span>
+                <span id="btn-record-label">Enregistrer .mp4</span>
+              </button>
+
+              <button id="btn-snapshot" class="btn-action" type="button" disabled aria-label="Prendre une capture photo JPEG">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+                <span>Capture photo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: 4-Tab Broadcast Control Console -->
+      <aside class="console-column bezel-outer" aria-label="Panneau de réglages GL310">
+        <div class="console-inner bezel-inner">
+          <nav class="tab-bar" role="tablist" aria-label="Sections de configuration">
+            <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-video" id="tab-video" data-tab="video" type="button">Vidéo</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-audio" id="tab-audio" data-tab="audio" type="button">Audio &amp; Jacks</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-outputs" id="tab-outputs" data-tab="outputs" type="button">Sorties OBS</button>
+            <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-device" id="tab-device" data-tab="device" type="button">Boîtier &amp; Logs</button>
+          </nav>
+
+          <div class="tab-panels">
+            <!-- TAB 1: VIDÉO -->
+            <div id="panel-video" class="tab-panel active" role="tabpanel" aria-labelledby="tab-video">
+              <div class="control-group">
+                <div class="group-header">
+                  <h2>Encodeur H.264 (Studio OBS)</h2>
+                  <span class="pill-tag mono">MPEG-TS</span>
+                </div>
+
+                <div class="field-row">
+                  <span class="field-label">Cadence IPS encodeur</span>
+                  <select id="sel-fps-policy" class="studio-select" aria-label="Cadence IPS encodeur">
+                    <option value="auto">Auto (1080p30 / 720p60)</option>
+                    <option value="force30">Forcer 30 fps</option>
+                    <option value="force25">Forcer 25 fps (PAL)</option>
+                    <option value="force24">Forcer 24 fps</option>
+                  </select>
+                </div>
+
+                <div class="field-block">
+                  <div class="field-head">
+                    <label class="field-label" for="range-video-kbps">Débit vidéo</label>
+                    <span id="val-video-kbps" class="mono accent-val">8 Mbit/s</span>
+                  </div>
+                  <input id="range-video-kbps" class="studio-range" type="range" min="4000" max="30000" step="2000" value="8000">
+                  <div class="preset-chips" data-preset="video_kbps">
+                    <button type="button" class="chip-btn" data-val="4000">4M</button>
+                    <button type="button" class="chip-btn" data-val="6000">6M</button>
+                    <button type="button" class="chip-btn active" data-val="8000">8M</button>
+                    <button type="button" class="chip-btn" data-val="12000">12M</button>
+                    <button type="button" class="chip-btn" data-val="20000">20M</button>
+                    <button type="button" class="chip-btn" data-val="30000">30M</button>
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <span class="field-label">Intervalle GOP (images clés)</span>
+                  <select id="sel-gop" class="studio-select" aria-label="Intervalle GOP">
+                    <option value="one_sec">1 seconde (faible latence)</option>
+                    <option value="two_sec" selected>2 secondes (standard OBS/YT)</option>
+                  </select>
+                </div>
+
+                <div class="field-row">
+                  <span class="field-label">Format caméra V4L2 (/dev/video14)</span>
+                  <select id="sel-v4l2-format" class="studio-select" aria-label="Format caméra V4L2">
+                    <option value="auto">Auto (résolution native)</option>
+                    <option value="fixed1080p30">Forcer 1080p 30 fps fixe</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <div class="group-header">
+                  <h2>Mode KVM (MJPEG matériel)</h2>
+                  <span class="pill-tag mono">0 % CPU</span>
+                </div>
+
+                <div class="field-row">
+                  <span class="field-label">Résolution MJPEG</span>
+                  <select id="sel-mjpeg-res" class="studio-select" aria-label="Résolution MJPEG">
+                    <option value="r640x360">640 × 360 (ultra léger)</option>
+                    <option value="r960x540">960 × 540</option>
+                    <option value="r1280x720" selected>1280 × 720 (KVM recommandé)</option>
+                    <option value="r1920x1080">1920 × 1080</option>
+                  </select>
+                </div>
+
+                <div class="field-row">
+                  <span class="field-label">Cadence KVM</span>
+                  <select id="sel-mjpeg-fps" class="studio-select" aria-label="Cadence KVM">
+                    <option value="30" selected>30 fps</option>
+                    <option value="15">15 fps (faible bande passante)</option>
+                  </select>
+                </div>
+
+                <div class="field-block">
+                  <div class="field-head">
+                    <label class="field-label" for="range-mjpeg-q">Qualité JPEG matérielle</label>
+                    <span id="val-mjpeg-q" class="mono accent-val">11 / 15</span>
+                  </div>
+                  <input id="range-mjpeg-q" class="studio-range" type="range" min="0" max="15" step="1" value="11">
+                </div>
+              </div>
+
+              <button id="btn-apply-video" class="btn-apply" type="button">Appliquer les réglages vidéo</button>
+            </div>
+
+            <!-- TAB 2: AUDIO & JACKS -->
+            <div id="panel-audio" class="tab-panel" role="tabpanel" aria-labelledby="tab-audio">
+              <div class="control-group">
+                <div class="group-header">
+                  <h2>Source Audio Matérielle</h2>
+                  <span class="pill-tag mono">MCU 0x2E</span>
+                </div>
+
+                <div class="segmented-2" role="group" aria-label="Entrée audio matérielle">
+                  <button id="btn-ain-hdmi" class="seg-opt active" type="button" data-ain="hdmi">HDMI IN (LPCM)</button>
+                  <button id="btn-ain-jack" class="seg-opt" type="button" data-ain="jack">Jack 3,5 mm AUDIO IN</button>
+                </div>
+
+                <div id="analog-gain-wrap" class="field-block">
+                  <div class="field-head">
+                    <label class="field-label" for="range-analog-vol">Gain ligne analogique Jack IN (MCU 0x41)</label>
+                    <span id="val-analog-vol" class="mono accent-val">8 / 11</span>
+                  </div>
+                  <input id="range-analog-vol" class="studio-range" type="range" min="1" max="11" step="1" value="8">
+                </div>
+
+                <div class="field-block">
+                  <div class="field-head">
+                    <label class="field-label" for="range-enc-vol">Gain numérique encodeur (0x6F8)</label>
+                    <span id="val-enc-vol" class="mono accent-val">8 / 15</span>
+                  </div>
+                  <input id="range-enc-vol" class="studio-range" type="range" min="0" max="15" step="1" value="8">
+                </div>
+
+                <div class="field-row">
+                  <span class="field-label">Débit audio AAC</span>
+                  <select id="sel-audio-kbps" class="studio-select" aria-label="Débit audio AAC">
+                    <option value="128">128 kbit/s</option>
+                    <option value="160">160 kbit/s</option>
+                    <option value="192" selected>192 kbit/s</option>
+                    <option value="256">256 kbit/s</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <div class="group-header">
+                  <h2>Sorties Casque &amp; Monitoring PC</h2>
+                  <span class="pill-tag mono">PipeWire</span>
+                </div>
+
+                <label class="toggle-row" for="chk-audio-out-jack">
+                  <div>
+                    <span class="field-label">Jack 3,5 mm AUDIO OUT (boîtier)</span>
+                    <span class="field-hint">Passthrough analogique zéro latence (aou_pass_en)</span>
+                  </div>
+                  <input id="chk-audio-out-jack" class="studio-switch" type="checkbox" checked>
+                </label>
+
+                <label class="toggle-row" for="chk-pc-monitor">
+                  <div>
+                    <span class="field-label">Monitoring PC en direct</span>
+                    <span class="field-hint">Écoute le son du GL310 sur vos haut-parleurs Linux</span>
+                  </div>
+                  <input id="chk-pc-monitor" class="studio-switch" type="checkbox">
+                </label>
+
+                <div class="monitor-vol-row">
+                  <button id="btn-pc-mute" class="btn-icon-sm" type="button" aria-label="Couper ou réactiver le monitoring PC" aria-pressed="false">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                      <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                    </svg>
+                  </button>
+                  <input id="range-pc-vol" class="studio-range" type="range" min="0" max="100" step="1" value="80" aria-label="Volume monitoring PC">
+                  <span id="val-pc-vol" class="mono accent-val">80 %</span>
+                </div>
+              </div>
+
+              <div class="info-banner">
+                <span class="info-title">Statut HDMI OUT Passthrough</span>
+                <p id="hdmi-out-status" class="info-body">Boucle HDMI matérielle directe (toujours active quand HDMI IN est verrouillé — aucun registre de coupure logiciel sur GL310).</p>
+              </div>
+            </div>
+
+            <!-- TAB 3: SORTIES OBS & RÉSEAU -->
+            <div id="panel-outputs" class="tab-panel" role="tabpanel" aria-labelledby="tab-outputs">
+              <div class="control-group">
+                <div class="group-header">
+                  <h2>Ponts Locaux &amp; Réseau</h2>
+                  <span class="pill-tag mono">OBS / KVM</span>
+                </div>
+
+                <label class="toggle-row" for="chk-v4l2">
+                  <div>
+                    <span class="field-label">Caméra V4L2 <code class="mono">/dev/video14</code></span>
+                    <span class="field-hint">Créée sans sudo (« AVerMedia GL310 »)</span>
+                  </div>
+                  <input id="chk-v4l2" class="studio-switch" type="checkbox" checked>
+                </label>
+
+                <label class="toggle-row" for="chk-pipewire">
+                  <div>
+                    <span class="field-label">Micro virtuel PipeWire « GL310 Audio »</span>
+                    <span class="field-hint">Source audio dédiée OBS Studio (48 kHz stéréo)</span>
+                  </div>
+                  <input id="chk-pipewire" class="studio-switch" type="checkbox" checked>
+                </label>
+
+                <label class="toggle-row" for="chk-srt">
+                  <div>
+                    <span class="field-label">Flux SRT <code class="mono">:4850</code></span>
+                    <span class="field-hint">Copie H.264+AAC zéro transcodage pour OBS</span>
+                  </div>
+                  <input id="chk-srt" class="studio-switch" type="checkbox" checked>
+                </label>
+
+                <label class="toggle-row" for="chk-http">
+                  <div>
+                    <span class="field-label">Serveur HTTP intégré <code class="mono">:4848</code></span>
+                    <span class="field-hint">Expose /stream.ts, /mjpeg et /snapshot.jpg</span>
+                  </div>
+                  <input id="chk-http" class="studio-switch" type="checkbox" checked>
+                </label>
+
+                <label class="toggle-row" for="chk-lan">
+                  <div>
+                    <span class="field-label">Exposition réseau LAN (<code class="mono">0.0.0.0</code>)</span>
+                    <span class="field-hint">Désactivé par défaut (127.0.0.1 uniquement)</span>
+                  </div>
+                  <input id="chk-lan" class="studio-switch" type="checkbox">
+                </label>
+
+                <button id="btn-apply-outputs" class="btn-apply" type="button">Appliquer les sorties</button>
+              </div>
+
+              <div class="control-group">
+                <div class="group-header">
+                  <h2>URLs en direct</h2>
+                </div>
+                <div class="url-list">
+                  <div class="url-row">
+                    <span class="url-tag mono">SRT</span>
+                    <input id="url-srt" class="url-field mono" type="text" readonly value="srt://127.0.0.1:4850?mode=caller&transtype=live&latency=120000">
+                    <button class="btn-copy" type="button" data-copy="url-srt">Copier</button>
+                  </div>
+                  <div class="url-row">
+                    <span class="url-tag mono">TS</span>
+                    <input id="url-ts" class="url-field mono" type="text" readonly value="http://127.0.0.1:4848/stream.ts">
+                    <button class="btn-copy" type="button" data-copy="url-ts">Copier</button>
+                  </div>
+                  <div class="url-row">
+                    <span class="url-tag mono">KVM</span>
+                    <input id="url-mjpeg" class="url-field mono" type="text" readonly value="http://127.0.0.1:4848/mjpeg">
+                    <button class="btn-copy" type="button" data-copy="url-mjpeg">Copier</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="info-banner">
+                <span class="info-title">Guide rapide OBS Studio</span>
+                <p class="info-body"><strong>Méthode 1 (Simple) :</strong> Périphérique de capture vidéo (V4L2) → <code>AVerMedia GL310 (/dev/video14)</code> + Capture d’entrée audio → <code>GL310 Audio</code>.</p>
+                <p class="info-body"><strong>Méthode 2 (Zéro ré-encodage) :</strong> Source Média → décochez <em>Fichier local</em> → collez l’URL SRT ou HTTP TS → Options FFmpeg : <code>probesize=500000 analyzeduration=500000</code>.</p>
+              </div>
+            </div>
+
+            <!-- TAB 4: BOÎTIER & LOGS -->
+            <div id="panel-device" class="tab-panel" role="tabpanel" aria-labelledby="tab-device">
+              <div class="control-group">
+                <div class="group-header">
+                  <h2>Anneau LED &amp; Bouton physique</h2>
+                  <span id="mcu-id-badge" class="pill-tag mono">MCU --</span>
+                </div>
+
+                <div class="field-row">
+                  <span class="field-label">Action du bouton central</span>
+                  <select id="sel-button-action" class="studio-select" aria-label="Action du bouton central">
+                    <option value="toggle_record">Enregistrer / Arrêter .mp4</option>
+                    <option value="toggle_capture">Démarrer / Arrêter capture</option>
+                    <option value="snapshot">Prendre une capture photo</option>
+                    <option value="none">Aucune action</option>
+                  </select>
+                </div>
+
+                <div class="led-control-row">
+                  <div id="led-preview-ring" class="led-ring led-auto" aria-hidden="true"></div>
+                  <div class="led-buttons" role="group" aria-label="Motifs anneau LED">
+                    <button type="button" class="chip-btn active" data-led="auto">Auto</button>
+                    <button type="button" class="chip-btn" data-led="clockwise">Rotation</button>
+                    <button type="button" class="chip-btn" data-led="solid">Fixe</button>
+                    <button type="button" class="chip-btn" data-led="fade">Respiration</button>
+                    <button type="button" class="chip-btn" data-led="fast">Rapide</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <div class="group-header">
+                  <h2>Firmwares AVerMedia (SHA-256)</h2>
+                  <span id="fw-badge" class="pill-tag mono">Vérification…</span>
+                </div>
+                <p id="fw-detail" class="field-hint">Non hébergés dans le dépôt Git. Vérification SHA-256 stricte avant chargement en RAM.</p>
+                <div class="fw-actions">
+                  <button id="btn-fw-fetch" class="btn-ghost" type="button">Télécharger (Audité Archive.org)</button>
+                </div>
+                <div class="fw-import-row">
+                  <input id="inp-fw-path" class="url-field mono" type="text" placeholder="/chemin/vers/GL310_driver.zip ou dossier Windows">
+                  <button id="btn-fw-import" class="btn-copy" type="button">Importer</button>
+                </div>
+              </div>
+
+              <div class="control-group logs-group">
+                <div class="group-header">
+                  <h2>Console système</h2>
+                  <div class="log-filters">
+                    <button type="button" class="log-filter active" data-level="all">Tous</button>
+                    <button type="button" class="log-filter" data-level="warn">Alertes</button>
+                    <button type="button" class="log-filter" data-level="error">Erreurs</button>
+                    <button id="btn-clear-logs" type="button" class="log-filter">Effacer</button>
+                  </div>
+                </div>
+                <div id="log-console" class="log-console mono" role="log" aria-live="polite"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

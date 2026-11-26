@@ -1,0 +1,22 @@
+[Unit]
+Description=AVerMedia GL310 Hardware MJPEG KVM Daemon (GL310-Linux)
+After=network-online.target systemd-udevd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs unprivileged using udev group 'video' access to USB 07ca:c835.
+# Install firmwares into /lib/firmware/avermedia or override User= + GL310_FIRMWARE=.
+DynamicUser=yes
+SupplementaryGroups=video
+Environment=GL310_FIRMWARE=/lib/firmware/avermedia
+ExecStart=/usr/local/bin/gl310-cli kvm --res 720p --fps 30 --quality 12 --http 0.0.0.0:4848
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

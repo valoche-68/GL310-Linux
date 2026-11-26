@@ -1,0 +1,63 @@
+# Rust / Cargo / Tauri build outputs
+/target/
+**/target/
+/apps/gl310-studio/src-tauri/gen/
+node_modules/
+
+# Packaging / release artifacts
+/dist/
+*.deb
+*.AppImage
+*.rpm
+*.tar.gz
+
+# Proprietary AVerMedia firmware & Windows driver dumps — NEVER commit!
+/firmware/*.bin
+/firmware/*.BIN
+/vendor/
+*.bin
+*.BIN
+*.sys
+*.SYS
+*.cat
+*.CAT
+*.inf
+*.INF
+*.dll
+*.DLL
+*.ax
+*.AX
+*.exe
+*.EXE
+*.zip
+*.ZIP
+qpvidfwusb*
+qpaudfwusb*
+AVer330USB*
+aver330usb*
+
+# Media captures & logs
+*.ts
+*.mp4
+*.mkv
+*.mjpeg
+*.jpg
+*.jpeg
+*.wav
+*.aac
+*.pcm
+*.log
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*~
+*.swp
+.idea/
+.vscode/
+
+# Keep directory placeholders if any
+!apps/gl310-studio/src-tauri/icons/*.png
+!apps/gl310-studio/src-tauri/icons/*.ico
+!apps/gl310-studio/src-tauri/icons/*.icns
+!apps/gl310-studio/ui/assets/*

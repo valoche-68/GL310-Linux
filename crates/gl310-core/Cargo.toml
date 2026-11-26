@@ -1,0 +1,16 @@
+[package]
+name = "gl310-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Userspace Rust driver and streaming engine for AVerMedia LGP Lite (GL310, USB 07ca:c835)"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+libc = "0.2"
+rusb = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
