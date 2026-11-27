@@ -2,7 +2,7 @@
 
 # GL310-Linux
 
-**100% Userspace Linux Driver, Universal CLI, Raspberry Pi KVM Daemon & Tauri v2 Broadcast Studio for the AVerMedia Live Gamer Portable Lite (GL310, USB `07ca:c835`)**
+**Linux driver for AVerMedia LGP Lite (GL310 / `07ca:c835`) — Desktop Studio App, Universal CLI & Raspberry Pi KVM (OBS, V4L2, PipeWire)**
 
 🇬🇧 **English** | [🇫🇷 Français](README.fr.md)
 

@@ -2,7 +2,7 @@
 
 # GL310-Linux
 
-**Pilote Linux 100 % Espace Utilisateur, CLI Universelle, Daemon KVM Raspberry Pi & Application Desktop Tauri v2 pour l’AVerMedia Live Gamer Portable Lite (GL310, USB `07ca:c835`)**
+**Pilote Linux pour AVerMedia LGP Lite (GL310 / `07ca:c835`) — App Studio, CLI universelle & Raspberry Pi KVM (OBS, V4L2, PipeWire)**
 
 [🇬🇧 English](README.md) | 🇫🇷 **Français**
 
