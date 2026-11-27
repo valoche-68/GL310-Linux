@@ -11,7 +11,7 @@
 [![Tauri v2](https://img.shields.io/badge/GUI-Tauri%20v2%20(0%20node__modules)-f43f5e.svg)](apps/gl310-studio)
 [![Linux](https://img.shields.io/badge/Platform-Linux%20x86__64%20%7C%20ARM64%20(RPi)-10b981.svg)](#raspberry-pi-kvm-mode)
 [![Languages](https://img.shields.io/badge/UI%20Languages-English%20(default)%20%7C%20Fran%C3%A7ais-0ea5e9.svg)](#overview)
-[![Release](https://img.shields.io/badge/Release-v0.1.0%20(.deb%20%7C%20.AppImage%20%7C%20CLI)-6366f1.svg)](https://github.com/valoche-68/GL310-Linux/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v0.2.0%20(.deb%20%7C%20.AppImage%20%7C%20CLI)-6366f1.svg)](https://github.com/valoche-68/GL310-Linux/releases/latest)
 
 </div>
 
@@ -109,18 +109,18 @@ Download the latest release from **[GitHub Releases](https://github.com/valoche-
 
 - **Debian / Ubuntu / Mint (`.deb`, amd64)** — installs `gl310-cli`, `gl310-studio`, desktop icon, `udev` rule, and `systemd` KVM unit:
   ```bash
-  sudo apt install ./gl310-linux_0.1.0_amd64.deb
+  sudo apt install ./gl310-linux_0.2.0_amd64.deb
   ```
 - **Any Linux x86_64 (`.AppImage`)** — portable GUI + bundled CLI (`--cli`):
   ```bash
-  chmod +x GL310-Studio-0.1.0-x86_64.AppImage
-  ./GL310-Studio-0.1.0-x86_64.AppImage           # Launch GL310 Studio
-  ./GL310-Studio-0.1.0-x86_64.AppImage --cli doctor
+  chmod +x GL310-Studio-0.2.0-x86_64.AppImage
+  ./GL310-Studio-0.2.0-x86_64.AppImage           # Launch GL310 Studio
+  ./GL310-Studio-0.2.0-x86_64.AppImage --cli doctor
   ```
   *(For non-root USB access with the AppImage, install `udev/70-avermedia-gl310.rules` via `sudo bash scripts/install_udev.sh`.)*
-- **Standalone CLI (`gl310-cli-v0.1.0-linux-x86_64.tar.gz`)** — zero GUI dependencies.
+- **Standalone CLI (`gl310-cli-v0.2.0-linux-x86_64.tar.gz`)** — zero GUI dependencies.
 
-> **Binary compatibility note:** The `v0.1.0` prebuilt `x86_64` packages were built locally on **Debian 13 (`glibc 2.41`, `libwebkit2gtk-4.1`)**. They run out-of-the-box on Debian 13+, Ubuntu 25.04+, Arch Linux, and recent Fedora releases. On older distributions (Debian 12, Ubuntu 22.04/24.04) or **Raspberry Pi (`aarch64` / `armv7`)**, build natively in one step with `./install.sh` below.
+> **Binary compatibility note:** The `v0.2.0` prebuilt `x86_64` packages were built locally on **Debian 13 (`glibc 2.41`, `libwebkit2gtk-4.1`)**. They run out-of-the-box on Debian 13+, Ubuntu 25.04+, Arch Linux, and recent Fedora releases. On older distributions (Debian 12, Ubuntu 22.04/24.04) or **Raspberry Pi (`aarch64` / `armv7`)**, build natively in one step with `./install.sh` below.
 
 ### Option 2 — Build & Install from Source on Any Linux Distro (`./install.sh`)
 

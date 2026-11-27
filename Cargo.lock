@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "gl310-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "clap_complete",
@@ -1261,7 +1261,7 @@ dependencies = [
 
 [[package]]
 name = "gl310-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "libc",
@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "gl310-studio"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "gl310-core",
