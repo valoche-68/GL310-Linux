@@ -348,7 +348,10 @@ fn extract_firmware_from_zip(zip_path: &Path) -> Result<(Vec<u8>, Vec<u8>), Stri
         let entry = archive
             .by_index(i)
             .map_err(|e| format!("Failed reading ZIP entry #{i}: {e}"))?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|e| format!("Invalid ZIP entry name #{i}: {e}"))?
+            .into_owned();
         if name.starts_with('/')
             || name.starts_with('\\')
             || name.contains("..")
